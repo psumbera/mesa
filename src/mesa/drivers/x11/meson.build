@@ -34,6 +34,6 @@ libgl = shared_library(
   ],
   link_with : [libmesa_classic, libglapi_static, gl_link_with],
   dependencies : [idep_mesautil, dep_x11, dep_xext, dep_xcb, dep_thread],
-  version : '1.6.0',
+  version : '1.2.0',
   install : true,
 )

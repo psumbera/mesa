@@ -48,7 +48,7 @@ endif
 libgbm = shared_library(
   'gbm',
   files_gbm,
-  include_directories : incs_gbm,
+  include_directories : [incs_gbm, '/usr/include/libdrm'],
   c_args : [args_gbm],
   link_args : [ld_args_gc_sections],
   link_with : libloader,

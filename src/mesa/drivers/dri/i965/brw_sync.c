@@ -38,7 +38,9 @@
  * performance bottleneck, though.
  */
 
+#ifdef SYNC_IOC_MERGE
 #include <libsync.h> /* Requires Android or libdrm-2.4.72 */
+#endif
 
 #include "util/os_file.h"
 #include "util/u_memory.h"
@@ -307,8 +309,10 @@ brw_fence_has_completed_locked(struct brw_fence *fence)
    case BRW_FENCE_TYPE_SYNC_FD:
       assert(fence->sync_fd != -1);
 
+#ifdef SYNC_IOC_MERGE
       if (sync_wait(fence->sync_fd, 0) == -1)
          return false;
+#endif
 
       fence->signalled = true;
 
@@ -371,8 +375,11 @@ brw_fence_client_wait_locked(struct brw_context *brw, struct brw_fence *fence,
       else
          timeout_i32 = timeout;
 
+#ifdef SYNC_IOC_MERGE
       if (sync_wait(fence->sync_fd, timeout_i32) == -1)
          return false;
+
+#endif
 
       fence->signalled = true;
       return true;

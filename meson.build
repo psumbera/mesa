@@ -208,6 +208,7 @@ with_dri_r200 = dri_drivers.contains('r200')
 with_dri_nouveau = dri_drivers.contains('nouveau')
 
 with_dri = dri_drivers.length() != 0
+with_dri = true
 
 gallium_drivers = get_option('gallium-drivers')
 if gallium_drivers.contains('auto')
@@ -512,7 +513,7 @@ endif
 use_elf_tls = false
 if (not ['freebsd', 'openbsd', 'haiku'].contains(host_machine.system()) and
     (not with_platform_android or get_option('platform-sdk-version') >= 29) and
-    (not with_platform_windows or not with_shared_glapi))
+    (not with_platform_windows or not with_shared_glapi) and (get_option('elf-tls') != false))
   pre_args += '-DUSE_ELF_TLS'
   use_elf_tls = true
 

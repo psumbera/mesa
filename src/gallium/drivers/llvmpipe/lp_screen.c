@@ -362,8 +362,12 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_GL_SPIRV:
    case PIPE_CAP_POST_DEPTH_COVERAGE:
    case PIPE_CAP_PACKED_UNIFORMS: {
+#if !defined(__sparc__)
       struct llvmpipe_screen *lscreen = llvmpipe_screen(screen);
       return !lscreen->use_tgsi;
+#else
+      return !!(LP_DEBUG & DEBUG_TGSI_IR);
+#endif
    }
    default:
       return u_pipe_screen_get_param_defaults(screen, param);
@@ -379,15 +383,19 @@ llvmpipe_get_shader_param(struct pipe_screen *screen,
    switch(shader)
    {
    case PIPE_SHADER_COMPUTE:
+#if !defined(__sparc__)
       if ((lscreen->allow_cl) && param == PIPE_SHADER_CAP_SUPPORTED_IRS)
          return (1 << PIPE_SHADER_IR_TGSI) | (1 << PIPE_SHADER_IR_NIR) | (1 << PIPE_SHADER_IR_NIR_SERIALIZED);
+#endif
       FALLTHROUGH;
    case PIPE_SHADER_FRAGMENT:
       if (param == PIPE_SHADER_CAP_PREFERRED_IR) {
          if (lscreen->use_tgsi)
             return PIPE_SHADER_IR_TGSI;
+#if !defined(__sparc__)
          else
             return PIPE_SHADER_IR_NIR;
+#endif
       }
 
       return gallivm_get_shader_param(param);
@@ -402,8 +410,10 @@ llvmpipe_get_shader_param(struct pipe_screen *screen,
       if (param == PIPE_SHADER_CAP_PREFERRED_IR) {
          if (lscreen->use_tgsi)
             return PIPE_SHADER_IR_TGSI;
+#if !defined(__sparc__)
          else
             return PIPE_SHADER_IR_NIR;
+#endif
       }
 
       switch (param) {

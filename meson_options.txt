@@ -403,6 +403,12 @@ option(
   description : 'Enable execmem support.  Without execmem, glapi will fail to generate dynamic glapi stubs when entrypoints unknown to glapi but known to DRI drivers are requested in eglGetProcAddress or glXGetProcAddress.  This should be enabled unless the platform can guarantee glapi and DRI drivers are always built from the same source tree.'
 )
 option(
+  'elf-tls',
+  type : 'boolean',
+  value : true,
+  description : 'Enable thread-local storage in GLX and EGL'
+)
+option(
   'osmesa',
   type : 'boolean',
   value : false,
