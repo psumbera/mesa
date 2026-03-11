@@ -56,11 +56,19 @@
 #include <llvm-c/ExecutionEngine.h>
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
+#if LLVM_VERSION_MAJOR >= 20
+#include <llvm/TargetParser/Triple.h>
+#else
 #include <llvm/ADT/Triple.h>
+#endif
 #include <llvm/Analysis/TargetLibraryInfo.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/Support/CommandLine.h>
+#if LLVM_VERSION_MAJOR >= 19
+#include <llvm/TargetParser/Host.h>
+#else
 #include <llvm/Support/Host.h>
+#endif
 #include <llvm/Support/PrettyStackTrace.h>
 #include <llvm/ExecutionEngine/ObjectCache.h>
 #include <llvm/Support/TargetSelect.h>
@@ -357,7 +365,11 @@ lp_build_create_jit_compiler_for_module(LLVMExecutionEngineRef *OutJIT,
    builder.setEngineKind(EngineKind::JIT)
           .setErrorStr(&Error)
           .setTargetOptions(options)
+#if LLVM_VERSION_MAJOR >= 20
+          .setOptLevel((CodeGenOptLevel)OptLevel);
+#else
           .setOptLevel((CodeGenOpt::Level)OptLevel);
+#endif
 
 #ifdef _WIN32
     /*
@@ -383,7 +395,11 @@ lp_build_create_jit_compiler_for_module(LLVMExecutionEngineRef *OutJIT,
     * architectures.
     */
    llvm::StringMap<bool> features;
+#if LLVM_VERSION_MAJOR >= 20
+   features = llvm::sys::getHostCPUFeatures();
+#else
    llvm::sys::getHostCPUFeatures(features);
+#endif
 
    for (StringMapIterator<bool> f = features.begin();
         f != features.end();

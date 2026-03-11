@@ -35,7 +35,11 @@
 #include <llvm-c/Disassembler.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/Format.h>
+#if LLVM_VERSION_MAJOR >= 19
+#include <llvm/TargetParser/Host.h>
+#else
 #include <llvm/Support/Host.h>
+#endif
 #include <llvm/IR/Module.h>
 
 #include "util/u_math.h"

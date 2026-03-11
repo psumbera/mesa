@@ -40,12 +40,16 @@
 
 #include <llvm/Config/llvm-config.h>
 #include <llvm-c/Analysis.h>
+#if LLVM_VERSION_MAJOR < 20
 #include <llvm-c/Transforms/Scalar.h>
 #if LLVM_VERSION_MAJOR >= 7
 #include <llvm-c/Transforms/Utils.h>
 #endif
+#else
+#include <llvm-c/Transforms/PassBuilder.h>
+#endif
 #include <llvm-c/BitWriter.h>
-#if GALLIVM_HAVE_CORO
+#if GALLIVM_HAVE_CORO && LLVM_VERSION_MAJOR < 20
 #if LLVM_VERSION_MAJOR <= 8 && (defined(PIPE_ARCH_AARCH64) || defined (PIPE_ARCH_ARM) || defined(PIPE_ARCH_S390) || defined(PIPE_ARCH_MIPS64))
 #include <llvm-c/Transforms/IPO.h>
 #endif
@@ -113,11 +117,13 @@ create_pass_manager(struct gallivm_state *gallivm)
    assert(!gallivm->passmgr);
    assert(gallivm->target);
 
+#if LLVM_VERSION_MAJOR < 20
    gallivm->passmgr = LLVMCreateFunctionPassManagerForModule(gallivm->module);
    if (!gallivm->passmgr)
       return FALSE;
+#endif
 
-#if GALLIVM_HAVE_CORO
+#if GALLIVM_HAVE_CORO && LLVM_VERSION_MAJOR < 20
    gallivm->cgpassmgr = LLVMCreatePassManager();
 #endif
    /*
@@ -134,7 +140,7 @@ create_pass_manager(struct gallivm_state *gallivm)
       free(td_str);
    }
 
-#if GALLIVM_HAVE_CORO
+#if GALLIVM_HAVE_CORO && LLVM_VERSION_MAJOR < 20
 #if LLVM_VERSION_MAJOR <= 8 && (defined(PIPE_ARCH_AARCH64) || defined (PIPE_ARCH_ARM) || defined(PIPE_ARCH_S390) || defined(PIPE_ARCH_MIPS64))
    LLVMAddArgumentPromotionPass(gallivm->cgpassmgr);
    LLVMAddFunctionAttrsPass(gallivm->cgpassmgr);
@@ -144,6 +150,7 @@ create_pass_manager(struct gallivm_state *gallivm)
    LLVMAddCoroElidePass(gallivm->cgpassmgr);
 #endif
 
+#if LLVM_VERSION_MAJOR < 20
    if ((gallivm_perf & GALLIVM_PERF_NO_OPT) == 0) {
       /*
        * TODO: Evaluate passes some more - keeping in mind
@@ -181,8 +188,9 @@ create_pass_manager(struct gallivm_state *gallivm)
        */
       LLVMAddPromoteMemoryToRegisterPass(gallivm->passmgr);
    }
-#if GALLIVM_HAVE_CORO
+#if GALLIVM_HAVE_CORO && LLVM_VERSION_MAJOR < 20
    LLVMAddCoroCleanupPass(gallivm->passmgr);
+#endif
 #endif
 
    return TRUE;
@@ -200,7 +208,7 @@ gallivm_free_ir(struct gallivm_state *gallivm)
       LLVMDisposePassManager(gallivm->passmgr);
    }
 
-#if GALLIVM_HAVE_CORO
+#if GALLIVM_HAVE_CORO && LLVM_VERSION_MAJOR < 20
    if (gallivm->cgpassmgr) {
       LLVMDisposePassManager(gallivm->cgpassmgr);
    }
@@ -604,9 +612,10 @@ gallivm_compile_module(struct gallivm_state *gallivm)
    if (gallivm_debug & GALLIVM_DEBUG_PERF)
       time_begin = os_time_get();
 
-#if GALLIVM_HAVE_CORO
+#if GALLIVM_HAVE_CORO && LLVM_VERSION_MAJOR < 20
    LLVMRunPassManager(gallivm->cgpassmgr, gallivm->module);
 #endif
+#if LLVM_VERSION_MAJOR < 20
    /* Run optimization passes */
    LLVMInitializeFunctionPassManager(gallivm->passmgr);
    func = LLVMGetFirstFunction(gallivm->module);
@@ -626,6 +635,16 @@ gallivm_compile_module(struct gallivm_state *gallivm)
       func = LLVMGetNextFunction(func);
    }
    LLVMFinalizeFunctionPassManager(gallivm->passmgr);
+#else
+   func = LLVMGetFirstFunction(gallivm->module);
+   while (func) {
+#if defined(DEBUG) || defined(PROFILE) || defined(PIPE_ARCH_X86) || defined(PIPE_ARCH_X86_64)
+      LLVMAddTargetDependentFunctionAttr(func, "no-frame-pointer-elim", "true");
+      LLVMAddTargetDependentFunctionAttr(func, "no-frame-pointer-elim-non-leaf", "true");
+#endif
+      func = LLVMGetNextFunction(func);
+   }
+#endif
 
    if (gallivm_debug & GALLIVM_DEBUG_PERF) {
       int64_t time_end = os_time_get();

@@ -50,6 +50,40 @@
 
 #include <llvm-c/Core.h>  
 
+#if LLVM_VERSION_MAJOR >= 15
+static inline LLVMValueRef
+lp_llvm_build_load(LLVMBuilderRef B, LLVMValueRef PointerVal, const char *Name)
+{
+   return LLVMBuildLoad2(B, LLVMGetElementType(LLVMTypeOf(PointerVal)),
+                         PointerVal, Name);
+}
+
+static inline LLVMValueRef
+lp_llvm_build_call(LLVMBuilderRef B, LLVMValueRef Fn,
+                   LLVMValueRef *Args, unsigned NumArgs,
+                   const char *Name)
+{
+   return LLVMBuildCall2(B, LLVMGetElementType(LLVMTypeOf(Fn)),
+                         Fn, Args, NumArgs, Name);
+}
+
+static inline LLVMValueRef
+lp_llvm_build_gep(LLVMBuilderRef B, LLVMValueRef Pointer,
+                  LLVMValueRef *Indices, unsigned NumIndices,
+                  const char *Name)
+{
+   return LLVMBuildGEP2(B, LLVMGetElementType(LLVMTypeOf(Pointer)), Pointer,
+                        Indices, NumIndices, Name);
+}
+
+#define LLVMBuildLoad(B, PointerVal, Name) \
+   lp_llvm_build_load((B), (PointerVal), (Name))
+#define LLVMBuildCall(B, Fn, Args, NumArgs, Name) \
+   lp_llvm_build_call((B), (Fn), (Args), (NumArgs), (Name))
+#define LLVMBuildGEP(B, Pointer, Indices, NumIndices, Name) \
+   lp_llvm_build_gep((B), (Pointer), (Indices), (NumIndices), (Name))
+#endif
+
 
 
 /**

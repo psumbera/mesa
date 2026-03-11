@@ -76,7 +76,11 @@ using PassManager         = llvm::legacy::PassManager;
 #include "llvm/Transforms/Utils.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #endif
+#if LLVM_VERSION_MAJOR >= 19
+#include "llvm/TargetParser/Host.h"
+#else
 #include "llvm/Support/Host.h"
+#endif
 #include "llvm/Support/DynamicLibrary.h"
 
 #include "llvm/IR/DIBuilder.h"

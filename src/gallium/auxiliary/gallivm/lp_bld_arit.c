@@ -391,16 +391,12 @@ lp_build_comp(struct lp_build_context *bld,
          return LLVMBuildNot(builder, a, "");
    }
 
-   if(LLVMIsConstant(a))
-      if (type.floating)
-          return LLVMConstFSub(bld->one, a);
-      else
-          return LLVMConstSub(bld->one, a);
+   if(LLVMIsConstant(a) && !type.floating)
+      return LLVMConstSub(bld->one, a);
+   else if (type.floating)
+      return LLVMBuildFSub(builder, bld->one, a, "");
    else
-      if (type.floating)
-         return LLVMBuildFSub(builder, bld->one, a, "");
-      else
-         return LLVMBuildSub(builder, bld->one, a, "");
+      return LLVMBuildSub(builder, bld->one, a, "");
 }
 
 
@@ -479,16 +475,12 @@ lp_build_add(struct lp_build_context *bld,
       }
    }
 
-   if(LLVMIsConstant(a) && LLVMIsConstant(b))
-      if (type.floating)
-         res = LLVMConstFAdd(a, b);
-      else
-         res = LLVMConstAdd(a, b);
+   if(LLVMIsConstant(a) && LLVMIsConstant(b) && !type.floating)
+      res = LLVMConstAdd(a, b);
+   else if (type.floating)
+      res = LLVMBuildFAdd(builder, a, b, "");
    else
-      if (type.floating)
-         res = LLVMBuildFAdd(builder, a, b, "");
-      else
-         res = LLVMBuildAdd(builder, a, b, "");
+      res = LLVMBuildAdd(builder, a, b, "");
 
    /* clamp to ceiling of 1.0 */
    if(bld->type.norm && (bld->type.floating || bld->type.fixed))
@@ -815,16 +807,12 @@ lp_build_sub(struct lp_build_context *bld,
       }
    }
 
-   if(LLVMIsConstant(a) && LLVMIsConstant(b))
-      if (type.floating)
-         res = LLVMConstFSub(a, b);
-      else
-         res = LLVMConstSub(a, b);
+   if(LLVMIsConstant(a) && LLVMIsConstant(b) && !type.floating)
+      res = LLVMConstSub(a, b);
+   else if (type.floating)
+      res = LLVMBuildFSub(builder, a, b, "");
    else
-      if (type.floating)
-         res = LLVMBuildFSub(builder, a, b, "");
-      else
-         res = LLVMBuildSub(builder, a, b, "");
+      res = LLVMBuildSub(builder, a, b, "");
 
    if(bld->type.norm && (bld->type.floating || bld->type.fixed))
       res = lp_build_max_simple(bld, res, bld->zero, GALLIVM_NAN_RETURN_OTHER_SECOND_NONNAN);
@@ -980,29 +968,16 @@ lp_build_mul(struct lp_build_context *bld,
    else
       shift = NULL;
 
-   if(LLVMIsConstant(a) && LLVMIsConstant(b)) {
-      if (type.floating)
-         res = LLVMConstFMul(a, b);
+   if (type.floating)
+      res = LLVMBuildFMul(builder, a, b, "");
+   else
+      res = LLVMBuildMul(builder, a, b, "");
+
+   if(shift) {
+      if(type.sign)
+         res = LLVMBuildAShr(builder, res, shift, "");
       else
-         res = LLVMConstMul(a, b);
-      if(shift) {
-         if(type.sign)
-            res = LLVMConstAShr(res, shift);
-         else
-            res = LLVMConstLShr(res, shift);
-      }
-   }
-   else {
-      if (type.floating)
-         res = LLVMBuildFMul(builder, a, b, "");
-      else
-         res = LLVMBuildMul(builder, a, b, "");
-      if(shift) {
-         if(type.sign)
-            res = LLVMBuildAShr(builder, res, shift, "");
-         else
-            res = LLVMBuildLShr(builder, res, shift, "");
-      }
+         res = LLVMBuildLShr(builder, res, shift, "");
    }
 
    return res;
@@ -1287,15 +1262,6 @@ lp_build_div(struct lp_build_context *bld,
       return a;
    if(a == bld->undef || b == bld->undef)
       return bld->undef;
-
-   if(LLVMIsConstant(a) && LLVMIsConstant(b)) {
-      if (type.floating)
-         return LLVMConstFDiv(a, b);
-      else if (type.sign)
-         return LLVMConstSDiv(a, b);
-      else
-         return LLVMConstUDiv(a, b);
-   }
 
    /* fast rcp is disabled (just uses div), so makes no sense to try that */
    if(FALSE &&
@@ -2643,7 +2609,7 @@ lp_build_rcp(struct lp_build_context *bld,
    assert(type.floating);
 
    if(LLVMIsConstant(a))
-      return LLVMConstFDiv(bld->one, a);
+      return LLVMBuildFDiv(builder, bld->one, a, "");
 
    /*
     * We don't use RCPPS because:

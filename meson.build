@@ -1778,6 +1778,10 @@ if with_llvm
     endif
   endif
 
+  if dep_llvm.version().version_compare('>= 21.0.0')
+    cpp_args += '-std=c++17'
+  endif
+
   if cc.get_id() == 'msvc'
     # Suppress "/DELAYLOAD:ole32.dll/shell32.dll ignored" warnings that LLVM adds
     add_project_link_arguments(
