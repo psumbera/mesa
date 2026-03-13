@@ -51,11 +51,116 @@
 #include <llvm-c/Core.h>  
 
 #if LLVM_VERSION_MAJOR >= 15
+static inline LLVMTypeRef
+lp_llvm_elem_type_from_aggregate_and_index(LLVMTypeRef type, LLVMValueRef index)
+{
+   LLVMTypeKind kind = LLVMGetTypeKind(type);
+
+   if (kind == LLVMStructTypeKind) {
+      if (LLVMGetValueKind(index) == LLVMConstantIntValueKind) {
+         unsigned field = (unsigned)LLVMConstIntGetZExtValue(index);
+         return LLVMStructGetTypeAtIndex(type, field);
+      }
+      return NULL;
+   }
+
+   if (kind == LLVMArrayTypeKind || kind == LLVMVectorTypeKind)
+      return LLVMGetElementType(type);
+
+   return NULL;
+}
+
+
+static inline LLVMTypeRef
+lp_llvm_value_type_from_memory_ref(LLVMValueRef value)
+{
+   switch (LLVMGetValueKind(value)) {
+   case LLVMGlobalVariableValueKind:
+      return LLVMGlobalGetValueType(value);
+   default:
+      return NULL;
+   }
+}
+
+static inline LLVMTypeRef
+lp_llvm_pointee_type_from_gep(LLVMValueRef gep)
+{
+   LLVMTypeRef type = LLVMGetGEPSourceElementType(gep);
+   int num_operands = LLVMGetNumOperands(gep);
+
+   /* Operand 0 is the base pointer and operand 1 is the first index into
+    * the pointer itself. Traverse from operand 2 to walk the pointee type. */
+   for (int i = 2; i < num_operands; i++) {
+      LLVMTypeRef next = lp_llvm_elem_type_from_aggregate_and_index(type,
+                                                                     LLVMGetOperand(gep, i));
+      if (!next)
+         break;
+      type = next;
+   }
+
+   return type;
+}
+
+static inline LLVMTypeRef
+lp_llvm_pointee_type(LLVMValueRef pointer)
+{
+   LLVMTypeRef pointer_type = LLVMTypeOf(pointer);
+   LLVMTypeRef elem;
+
+   if (LLVMGetTypeKind(pointer_type) == LLVMPointerTypeKind) {
+      elem = LLVMGetElementType(pointer_type);
+      if (elem)
+         return elem;
+   }
+
+   elem = lp_llvm_value_type_from_memory_ref(pointer);
+   if (elem)
+      return elem;
+
+   if (LLVMGetValueKind(pointer) == LLVMInstructionValueKind) {
+      LLVMOpcode op = LLVMGetInstructionOpcode(pointer);
+      if (op == LLVMAlloca)
+         return LLVMGetAllocatedType(pointer);
+      if (op == LLVMGetElementPtr)
+         return lp_llvm_pointee_type_from_gep(pointer);
+      if (op == LLVMBitCast || op == LLVMAddrSpaceCast || op == LLVMIntToPtr)
+         return lp_llvm_pointee_type(LLVMGetOperand(pointer, 0));
+   } else if (LLVMGetValueKind(pointer) == LLVMConstantExprValueKind) {
+      LLVMOpcode op = LLVMGetConstOpcode(pointer);
+      if (op == LLVMGetElementPtr)
+         return lp_llvm_pointee_type_from_gep(pointer);
+      if (op == LLVMBitCast || op == LLVMAddrSpaceCast || op == LLVMIntToPtr)
+         return lp_llvm_pointee_type(LLVMGetOperand(pointer, 0));
+   }
+
+   return LLVMInt8TypeInContext(LLVMGetTypeContext(pointer_type));
+}
+
 static inline LLVMValueRef
 lp_llvm_build_load(LLVMBuilderRef B, LLVMValueRef PointerVal, const char *Name)
 {
-   return LLVMBuildLoad2(B, LLVMGetElementType(LLVMTypeOf(PointerVal)),
-                         PointerVal, Name);
+   return LLVMBuildLoad2(B, lp_llvm_pointee_type(PointerVal), PointerVal, Name);
+}
+
+static inline LLVMTypeRef
+lp_llvm_function_type(LLVMValueRef function)
+{
+   LLVMTypeRef type = LLVMTypeOf(function);
+
+   if (LLVMGetTypeKind(type) == LLVMPointerTypeKind) {
+      LLVMTypeRef elem = LLVMGetElementType(type);
+      if (elem && LLVMGetTypeKind(elem) == LLVMFunctionTypeKind)
+         return elem;
+   }
+
+   switch (LLVMGetValueKind(function)) {
+   case LLVMFunctionValueKind:
+   case LLVMGlobalAliasValueKind:
+   case LLVMGlobalIFuncValueKind:
+      return LLVMGlobalGetValueType(function);
+   default:
+      return LLVMGetElementType(type);
+   }
 }
 
 static inline LLVMValueRef
@@ -63,7 +168,7 @@ lp_llvm_build_call(LLVMBuilderRef B, LLVMValueRef Fn,
                    LLVMValueRef *Args, unsigned NumArgs,
                    const char *Name)
 {
-   return LLVMBuildCall2(B, LLVMGetElementType(LLVMTypeOf(Fn)),
+   return LLVMBuildCall2(B, lp_llvm_function_type(Fn),
                          Fn, Args, NumArgs, Name);
 }
 
@@ -72,7 +177,7 @@ lp_llvm_build_gep(LLVMBuilderRef B, LLVMValueRef Pointer,
                   LLVMValueRef *Indices, unsigned NumIndices,
                   const char *Name)
 {
-   return LLVMBuildGEP2(B, LLVMGetElementType(LLVMTypeOf(Pointer)), Pointer,
+   return LLVMBuildGEP2(B, lp_llvm_pointee_type(Pointer), Pointer,
                         Indices, NumIndices, Name);
 }
 

@@ -49,6 +49,9 @@
 #include "gallivm/lp_bld_gather.h"
 #include "lp_bld_interp.h"
 
+static LLVMTypeRef
+sample_pos_array_type(LLVMValueRef sample_pos_array);
+
 
 /*
  * The shader JIT function operates on blocks of quads.
@@ -180,8 +183,8 @@ calc_centroid_offsets(struct lp_build_interp_soa_context *bld,
       LLVMValueRef x_val_idx = lp_build_const_int32(gallivm, s * 2);
       LLVMValueRef y_val_idx = lp_build_const_int32(gallivm, s * 2 + 1);
 
-      x_val_idx = lp_build_array_get(gallivm, bld->sample_pos_array, x_val_idx);
-      y_val_idx = lp_build_array_get(gallivm, bld->sample_pos_array, y_val_idx);
+      x_val_idx = lp_build_array_get2(gallivm, sample_pos_array_type(bld->sample_pos_array), bld->sample_pos_array, x_val_idx);
+      y_val_idx = lp_build_array_get2(gallivm, sample_pos_array_type(bld->sample_pos_array), bld->sample_pos_array, y_val_idx);
       x_val_idx = lp_build_broadcast_scalar(coeff_bld, x_val_idx);
       y_val_idx = lp_build_broadcast_scalar(coeff_bld, y_val_idx);
       centroid_x_offset = lp_build_select(coeff_bld, sample_cov, x_val_idx, centroid_x_offset);
@@ -189,6 +192,37 @@ calc_centroid_offsets(struct lp_build_interp_soa_context *bld,
    }
    *centroid_x = lp_build_select(coeff_bld, s_mask_and, pix_center_offset, centroid_x_offset);
    *centroid_y = lp_build_select(coeff_bld, s_mask_and, pix_center_offset, centroid_y_offset);
+}
+
+
+/* Note: this assumes the pointer to elem_type is in address space 0 */
+static LLVMValueRef
+load_casted(LLVMBuilderRef builder, LLVMTypeRef elem_type,
+            LLVMValueRef ptr, const char *name)
+{
+   ptr = LLVMBuildBitCast(builder, ptr, LLVMPointerType(elem_type, 0), name);
+   return LLVMBuildLoad2(builder, elem_type, ptr, name);
+}
+
+static LLVMValueRef
+indexed_load(LLVMBuilderRef builder,
+             LLVMTypeRef gep_type,
+             LLVMTypeRef elem_type,
+             LLVMValueRef ptr,
+             LLVMValueRef index,
+             const char *name)
+{
+   ptr = LLVMBuildGEP2(builder, gep_type, ptr, &index, 1, name);
+   return load_casted(builder, elem_type, ptr, name);
+}
+
+static LLVMTypeRef
+sample_pos_array_type(LLVMValueRef sample_pos_array)
+{
+   if (LLVMGetValueKind(sample_pos_array) == LLVMGlobalVariableValueKind)
+      return LLVMGlobalGetValueType(sample_pos_array);
+
+   return LLVMGetElementType(LLVMTypeOf(sample_pos_array));
 }
 
 /* Much easier, and significantly less instructions in the per-stamp
@@ -224,7 +258,6 @@ coeffs_init_simple(struct lp_build_interp_soa_context *bld,
       const unsigned interp = bld->interp[attrib];
       LLVMValueRef index = lp_build_const_int32(gallivm,
                                 attrib * TGSI_NUM_CHANNELS);
-      LLVMValueRef ptr;
       LLVMValueRef dadxaos = setup_bld->zero;
       LLVMValueRef dadyaos = setup_bld->zero;
       LLVMValueRef a0aos = setup_bld->zero;
@@ -234,15 +267,13 @@ coeffs_init_simple(struct lp_build_interp_soa_context *bld,
          FALLTHROUGH;
 
       case LP_INTERP_LINEAR:
-         ptr = LLVMBuildGEP(builder, dadx_ptr, &index, 1, "");
-         ptr = LLVMBuildBitCast(builder, ptr,
-               LLVMPointerType(setup_bld->vec_type, 0), "");
-         dadxaos = LLVMBuildLoad(builder, ptr, "");
+         dadxaos = indexed_load(builder,
+                              LLVMFloatTypeInContext(gallivm->context),
+                              setup_bld->vec_type, dadx_ptr, index, "");
 
-         ptr = LLVMBuildGEP(builder, dady_ptr, &index, 1, "");
-         ptr = LLVMBuildBitCast(builder, ptr,
-               LLVMPointerType(setup_bld->vec_type, 0), "");
-         dadyaos = LLVMBuildLoad(builder, ptr, "");
+         dadyaos = indexed_load(builder,
+                              LLVMFloatTypeInContext(gallivm->context),
+                              setup_bld->vec_type, dady_ptr, index, "");
 
          attrib_name(dadxaos, attrib, 0, ".dadxaos");
          attrib_name(dadyaos, attrib, 0, ".dadyaos");
@@ -250,10 +281,9 @@ coeffs_init_simple(struct lp_build_interp_soa_context *bld,
 
       case LP_INTERP_CONSTANT:
       case LP_INTERP_FACING:
-         ptr = LLVMBuildGEP(builder, a0_ptr, &index, 1, "");
-         ptr = LLVMBuildBitCast(builder, ptr,
-               LLVMPointerType(setup_bld->vec_type, 0), "");
-         a0aos = LLVMBuildLoad(builder, ptr, "");
+         a0aos = indexed_load(builder,
+                           LLVMFloatTypeInContext(gallivm->context),
+                           setup_bld->vec_type, a0_ptr, index, "");
          attrib_name(a0aos, attrib, 0, ".a0aos");
          break;
 
@@ -291,16 +321,15 @@ attribs_update_simple(struct lp_build_interp_soa_context *bld,
    unsigned attrib;
    LLVMValueRef pixoffx;
    LLVMValueRef pixoffy;
-   LLVMValueRef ptr;
    LLVMValueRef pix_center_offset = lp_build_const_vec(gallivm, coeff_bld->type, 0.5);
 
    /* could do this with code-generated passed in pixel offsets too */
 
    assert(loop_iter);
-   ptr = LLVMBuildGEP(builder, bld->xoffset_store, &loop_iter, 1, "");
-   pixoffx = LLVMBuildLoad(builder, ptr, "");
-   ptr = LLVMBuildGEP(builder, bld->yoffset_store, &loop_iter, 1, "");
-   pixoffy = LLVMBuildLoad(builder, ptr, "");
+   pixoffx = lp_build_pointer_get2(builder, coeff_bld->vec_type,
+                                   bld->xoffset_store, loop_iter);
+   pixoffy = lp_build_pointer_get2(builder, coeff_bld->vec_type,
+                                   bld->yoffset_store, loop_iter);
 
    pixoffx = LLVMBuildFAdd(builder, pixoffx,
                            lp_build_broadcast_scalar(coeff_bld, bld->x), "");
@@ -331,7 +360,7 @@ attribs_update_simple(struct lp_build_interp_soa_context *bld,
                   dadx = coeff_bld->one;
                   if (sample_id) {
                      LLVMValueRef x_val_idx = LLVMBuildMul(gallivm->builder, sample_id, lp_build_const_int32(gallivm, 2), "");
-                     x_val_idx = lp_build_array_get(gallivm, bld->sample_pos_array, x_val_idx);
+                     x_val_idx = lp_build_array_get2(gallivm, sample_pos_array_type(bld->sample_pos_array), bld->sample_pos_array, x_val_idx);
                      a = lp_build_broadcast_scalar(coeff_bld, x_val_idx);
                   } else {
                      a = lp_build_const_vec(gallivm, coeff_bld->type, bld->pos_offset);
@@ -342,7 +371,7 @@ attribs_update_simple(struct lp_build_interp_soa_context *bld,
                   if (sample_id) {
                      LLVMValueRef y_val_idx = LLVMBuildMul(gallivm->builder, sample_id, lp_build_const_int32(gallivm, 2), "");
                      y_val_idx = LLVMBuildAdd(gallivm->builder, y_val_idx, lp_build_const_int32(gallivm, 1), "");
-                     y_val_idx = lp_build_array_get(gallivm, bld->sample_pos_array, y_val_idx);
+                     y_val_idx = lp_build_array_get2(gallivm, sample_pos_array_type(bld->sample_pos_array), bld->sample_pos_array, y_val_idx);
                      a = lp_build_broadcast_scalar(coeff_bld, y_val_idx);
                   } else {
                      a = lp_build_const_vec(gallivm, coeff_bld->type, bld->pos_offset);
@@ -366,8 +395,8 @@ attribs_update_simple(struct lp_build_interp_soa_context *bld,
                         LLVMValueRef x_val_idx = LLVMBuildMul(gallivm->builder, sample_id, lp_build_const_int32(gallivm, 2), "");
                         LLVMValueRef y_val_idx = LLVMBuildAdd(gallivm->builder, x_val_idx, lp_build_const_int32(gallivm, 1), "");
 
-                        x_val_idx = lp_build_array_get(gallivm, bld->sample_pos_array, x_val_idx);
-                        y_val_idx = lp_build_array_get(gallivm, bld->sample_pos_array, y_val_idx);
+                        x_val_idx = lp_build_array_get2(gallivm, sample_pos_array_type(bld->sample_pos_array), bld->sample_pos_array, x_val_idx);
+                        y_val_idx = lp_build_array_get2(gallivm, sample_pos_array_type(bld->sample_pos_array), bld->sample_pos_array, y_val_idx);
                         xoffset = lp_build_broadcast_scalar(coeff_bld, x_val_idx);
                         yoffset = lp_build_broadcast_scalar(coeff_bld, y_val_idx);
                      } else if (loc == TGSI_INTERPOLATE_LOC_CENTROID) {
@@ -524,15 +553,14 @@ lp_build_interp_soa(struct lp_build_interp_soa_context *bld,
    struct lp_build_context *setup_bld = &bld->setup_bld;
    LLVMValueRef pixoffx;
    LLVMValueRef pixoffy;
-   LLVMValueRef ptr;
 
    /* could do this with code-generated passed in pixel offsets too */
 
    assert(loop_iter);
-   ptr = LLVMBuildGEP(builder, bld->xoffset_store, &loop_iter, 1, "");
-   pixoffx = LLVMBuildLoad(builder, ptr, "");
-   ptr = LLVMBuildGEP(builder, bld->yoffset_store, &loop_iter, 1, "");
-   pixoffy = LLVMBuildLoad(builder, ptr, "");
+   pixoffx = lp_build_pointer_get2(builder, coeff_bld->vec_type,
+                                   bld->xoffset_store, loop_iter);
+   pixoffy = lp_build_pointer_get2(builder, coeff_bld->vec_type,
+                                   bld->yoffset_store, loop_iter);
 
    pixoffx = LLVMBuildFAdd(builder, pixoffx,
                            lp_build_broadcast_scalar(coeff_bld, bld->x), "");

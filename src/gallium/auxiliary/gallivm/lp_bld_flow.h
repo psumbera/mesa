@@ -117,6 +117,7 @@ struct lp_build_loop_state
    LLVMBasicBlockRef block;
    LLVMValueRef counter_var;
    LLVMValueRef counter;
+   LLVMTypeRef counter_type;
    struct gallivm_state *gallivm;
 };
 
@@ -154,6 +155,7 @@ struct lp_build_for_loop_state
    LLVMBasicBlockRef exit;
    LLVMValueRef counter_var;
    LLVMValueRef counter;
+   LLVMTypeRef counter_type;
    LLVMValueRef step;
    LLVMIntPredicate cond;
    LLVMValueRef end;

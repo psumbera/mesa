@@ -563,6 +563,8 @@ generate_fs_loop(struct gallivm_state *gallivm,
                  const struct lp_fragment_shader_variant_key *key,
                  LLVMBuilderRef builder,
                  struct lp_type type,
+                 LLVMTypeRef jit_context_type,
+                 LLVMTypeRef jit_thread_data_type,
                  LLVMValueRef context_ptr,
                  LLVMValueRef sample_pos_array,
                  LLVMValueRef num_loop,
@@ -620,8 +622,10 @@ generate_fs_loop(struct gallivm_state *gallivm,
    /* truncate then sign extend. */
    system_values.front_facing = LLVMBuildTrunc(gallivm->builder, facing, LLVMInt1TypeInContext(gallivm->context), "");
    system_values.front_facing = LLVMBuildSExt(gallivm->builder, system_values.front_facing, LLVMInt32TypeInContext(gallivm->context), "");
-   system_values.view_index = lp_jit_thread_data_raster_state_view_index(gallivm,
-                                                                         thread_data_ptr);
+   system_values.view_index = lp_build_struct_get2(gallivm, jit_thread_data_type,
+                                                  thread_data_ptr,
+                                                  LP_JIT_THREAD_DATA_RASTER_STATE_VIEW_INDEX,
+                                                  "raster_state.view_index");
    if (key->depth.enabled ||
        key->stencil[0].enabled) {
 
@@ -670,17 +674,23 @@ generate_fs_loop(struct gallivm_state *gallivm,
    vec_type = lp_build_vec_type(gallivm, type);
    int_vec_type = lp_build_vec_type(gallivm, int_type);
 
-   stencil_refs[0] = lp_jit_context_stencil_ref_front_value(gallivm, context_ptr);
-   stencil_refs[1] = lp_jit_context_stencil_ref_back_value(gallivm, context_ptr);
+   stencil_refs[0] = lp_build_struct_get2(gallivm, jit_context_type, context_ptr,
+                                         LP_JIT_CTX_STENCIL_REF_FRONT, "stencil_ref_front");
+   stencil_refs[1] = lp_build_struct_get2(gallivm, jit_context_type, context_ptr,
+                                         LP_JIT_CTX_STENCIL_REF_BACK, "stencil_ref_back");
    /* convert scalar stencil refs into vectors */
    stencil_refs[0] = lp_build_broadcast(gallivm, int_vec_type, stencil_refs[0]);
    stencil_refs[1] = lp_build_broadcast(gallivm, int_vec_type, stencil_refs[1]);
 
-   consts_ptr = lp_jit_context_constants(gallivm, context_ptr);
-   num_consts_ptr = lp_jit_context_num_constants(gallivm, context_ptr);
+   consts_ptr = lp_build_struct_get2(gallivm, jit_context_type, context_ptr,
+                                   LP_JIT_CTX_CONSTANTS, "constants");
+   num_consts_ptr = lp_build_struct_get_ptr2(gallivm, jit_context_type, context_ptr,
+                                           LP_JIT_CTX_NUM_CONSTANTS, "num_constants");
 
-   ssbo_ptr = lp_jit_context_ssbos(gallivm, context_ptr);
-   num_ssbo_ptr = lp_jit_context_num_ssbos(gallivm, context_ptr);
+   ssbo_ptr = lp_build_struct_get_ptr2(gallivm, jit_context_type, context_ptr,
+                                     LP_JIT_CTX_SSBOS, "ssbos");
+   num_ssbo_ptr = lp_build_struct_get_ptr2(gallivm, jit_context_type, context_ptr,
+                                         LP_JIT_CTX_NUM_SSBOS, "num_ssbos");
 
    memset(outputs, 0, sizeof outputs);
 
@@ -744,7 +754,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
       sample_mask_in = lp_build_const_int_vec(gallivm, type, 1);
       mask_ptr = LLVMBuildGEP(builder, mask_store,
                               &loop_state.counter, 1, "mask_ptr");
-      mask_val = LLVMBuildLoad(builder, mask_ptr, "");
+      mask_val = LLVMBuildLoad2(builder, int_vec_type, mask_ptr, "");
 
       LLVMValueRef mask_in = LLVMBuildAnd(builder, mask_val, lp_build_const_int_vec(gallivm, type, 1), "");
       sample_mask_in = LLVMBuildOr(builder, sample_mask_in, mask_in, "");
@@ -805,7 +815,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
       s_mask_idx = LLVMBuildAdd(builder, s_mask_idx, loop_state.counter, "");
       s_mask_ptr = LLVMBuildGEP(builder, mask_store, &s_mask_idx, 1, "");
 
-      s_mask = LLVMBuildLoad(builder, s_mask_ptr, "");
+      s_mask = LLVMBuildLoad2(builder, int_vec_type, s_mask_ptr, "");
       s_mask = LLVMBuildAnd(builder, s_mask, mask_val, "");
    }
 
@@ -876,13 +886,13 @@ generate_fs_loop(struct gallivm_state *gallivm,
        * Recombine the resulting coverage masks post early Z into the fragment
        * shader execution mask.
        */
-      LLVMValueRef tmp_s_mask_or = LLVMBuildLoad(builder, s_mask_or, "");
+      LLVMValueRef tmp_s_mask_or = LLVMBuildLoad2(builder, int_vec_type, s_mask_or, "");
       tmp_s_mask_or = LLVMBuildOr(builder, tmp_s_mask_or, s_mask, "");
       LLVMBuildStore(builder, tmp_s_mask_or, s_mask_or);
 
       if (post_depth_coverage) {
          LLVMValueRef mask_bit_idx = LLVMBuildShl(builder, lp_build_const_int32(gallivm, 1), sample_loop_state.counter, "");
-         LLVMValueRef post_depth_mask_in = LLVMBuildLoad(builder, post_depth_sample_mask_in, "");
+         LLVMValueRef post_depth_mask_in = LLVMBuildLoad2(builder, int_vec_type, post_depth_sample_mask_in, "");
          mask_bit_idx = LLVMBuildAnd(builder, s_mask, lp_build_broadcast(gallivm, int_vec_type, mask_bit_idx), "");
          post_depth_mask_in = LLVMBuildOr(builder, post_depth_mask_in, mask_bit_idx, "");
          LLVMBuildStore(builder, post_depth_mask_in, post_depth_sample_mask_in);
@@ -893,7 +903,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
       lp_build_for_loop_end(&sample_loop_state);
 
       /* recombined all the coverage masks in the shader exec mask. */
-      tmp_s_mask_or = LLVMBuildLoad(builder, s_mask_or, "");
+      tmp_s_mask_or = LLVMBuildLoad2(builder, int_vec_type, s_mask_or, "");
       lp_build_mask_update(&mask, tmp_s_mask_or);
 
       if (key->min_samples == 1) {
@@ -917,7 +927,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
    }
 
    if (post_depth_coverage) {
-      system_values.sample_mask_in = LLVMBuildLoad(builder, post_depth_sample_mask_in, "");
+      system_values.sample_mask_in = LLVMBuildLoad2(builder, int_vec_type, post_depth_sample_mask_in, "");
    }
    else
       system_values.sample_mask_in = sample_mask_in;
@@ -931,7 +941,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
       LLVMValueRef s_mask_idx = LLVMBuildMul(builder, sample_loop_state.counter, num_loop, "");
       s_mask_idx = LLVMBuildAdd(builder, s_mask_idx, loop_state.counter, "");
       s_mask_ptr = LLVMBuildGEP(builder, mask_store, &s_mask_idx, 1, "");
-      s_mask = LLVMBuildLoad(builder, s_mask_ptr, "");
+      s_mask = LLVMBuildLoad2(builder, int_vec_type, s_mask_ptr, "");
       lp_build_mask_force(&mask, s_mask);
       lp_build_interp_soa_update_pos_dyn(interp, gallivm, loop_state.counter, sample_loop_state.counter);
       system_values.sample_id = sample_loop_state.counter;
@@ -976,7 +986,8 @@ generate_fs_loop(struct gallivm_state *gallivm,
    params.ssbo_ptr = ssbo_ptr;
    params.ssbo_sizes_ptr = num_ssbo_ptr;
    params.image = image;
-   params.aniso_filter_table = lp_jit_context_aniso_filter_table(gallivm, context_ptr);
+   params.aniso_filter_table = lp_build_struct_get2(gallivm, jit_context_type, context_ptr,
+                                                  LP_JIT_CTX_ANISO_FILTER_TABLE, "aniso_filter_table");
 
    /* Build the actual shader */
    if (shader->base.type == PIPE_SHADER_IR_TGSI)
@@ -994,10 +1005,11 @@ generate_fs_loop(struct gallivm_state *gallivm,
 
       if (color0 != -1 && outputs[color0][3]) {
          const struct util_format_description *cbuf_format_desc;
-         LLVMValueRef alpha = LLVMBuildLoad(builder, outputs[color0][3], "alpha");
+         LLVMValueRef alpha = LLVMBuildLoad2(builder, vec_type, outputs[color0][3], "alpha");
          LLVMValueRef alpha_ref_value;
 
-         alpha_ref_value = lp_jit_context_alpha_ref_value(gallivm, context_ptr);
+         alpha_ref_value = lp_build_struct_get2(gallivm, jit_context_type, context_ptr,
+                                             LP_JIT_CTX_ALPHA_REF, "alpha_ref_value");
          alpha_ref_value = lp_build_broadcast(gallivm, vec_type, alpha_ref_value);
 
          cbuf_format_desc = util_format_description(key->cbuf_format[0]);
@@ -1015,7 +1027,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
                                            0);
 
       if (color0 != -1 && outputs[color0][3]) {
-         LLVMValueRef alpha = LLVMBuildLoad(builder, outputs[color0][3], "alpha");
+         LLVMValueRef alpha = LLVMBuildLoad2(builder, vec_type, outputs[color0][3], "alpha");
 
          if (!key->multisample) {
             lp_build_alpha_to_coverage(gallivm, type,
@@ -1047,7 +1059,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
       lp_build_context_init(&smask_bld, gallivm, int_type);
 
       assert(smaski >= 0);
-      output_smask = LLVMBuildLoad(builder, outputs[smaski][0], "smask");
+      output_smask = LLVMBuildLoad2(builder, vec_type, outputs[smaski][0], "smask");
       output_smask = LLVMBuildBitCast(builder, output_smask, smask_bld.vec_type, "");
       if (!key->multisample && key->no_ms_sample_mask_out) {
          output_smask = lp_build_and(&smask_bld, output_smask, smask_bld.one);
@@ -1057,7 +1069,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
 
       if (key->min_samples > 1) {
          /* only the bit corresponding to this sample is to be used. */
-         LLVMValueRef tmp_mask = LLVMBuildLoad(builder, out_sample_mask_storage, "tmp_mask");
+         LLVMValueRef tmp_mask = LLVMBuildLoad2(builder, int_vec_type, out_sample_mask_storage, "tmp_mask");
          LLVMValueRef out_smask_idx = LLVMBuildShl(builder, lp_build_const_int32(gallivm, 1), sample_loop_state.counter, "");
          LLVMValueRef smask_bit = LLVMBuildAnd(builder, output_smask, lp_build_broadcast(gallivm, int_vec_type, out_smask_idx), "");
          output_smask = LLVMBuildOr(builder, tmp_mask, smask_bit, "");
@@ -1070,7 +1082,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
       int pos0 = find_output_by_semantic(&shader->info.base,
                                          TGSI_SEMANTIC_POSITION,
                                          0);
-      LLVMValueRef out = LLVMBuildLoad(builder, outputs[pos0][2], "");
+      LLVMValueRef out = LLVMBuildLoad2(builder, vec_type, outputs[pos0][2], "");
       LLVMValueRef idx = loop_state.counter;
       if (key->min_samples > 1)
          idx = LLVMBuildAdd(builder, idx,
@@ -1083,7 +1095,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
       int sten_out = find_output_by_semantic(&shader->info.base,
                                              TGSI_SEMANTIC_STENCIL,
                                              0);
-      LLVMValueRef out = LLVMBuildLoad(builder, outputs[sten_out][1], "output.s");
+      LLVMValueRef out = LLVMBuildLoad2(builder, vec_type, outputs[sten_out][1], "output.s");
       LLVMValueRef idx = loop_state.counter;
       if (key->min_samples > 1)
          idx = LLVMBuildAdd(builder, idx,
@@ -1105,7 +1117,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
                /* XXX: just initialize outputs to point at colors[] and
                 * skip this.
                 */
-               LLVMValueRef out = LLVMBuildLoad(builder, outputs[attrib][chan], "");
+               LLVMValueRef out = LLVMBuildLoad2(builder, vec_type, outputs[attrib][chan], "");
                LLVMValueRef color_ptr;
                LLVMValueRef color_idx = loop_state.counter;
                if (key->min_samples > 1)
@@ -1138,7 +1150,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
       s_mask_ptr = LLVMBuildGEP(builder, mask_store, &s_mask_idx, 1, "");
 
       /* combine the execution mask post fragment shader with the coverage mask. */
-      s_mask = LLVMBuildLoad(builder, s_mask_ptr, "");
+      s_mask = LLVMBuildLoad2(builder, int_vec_type, s_mask_ptr, "");
       if (key->min_samples == 1)
          s_mask = LLVMBuildAnd(builder, s_mask, lp_build_mask_value(&mask), "");
 
@@ -1148,7 +1160,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
           (!(depth_mode & EARLY_DEPTH_TEST) || (depth_mode & (EARLY_DEPTH_TEST_INFERRED)))) {
          LLVMValueRef out_smask_idx = LLVMBuildShl(builder, lp_build_const_int32(gallivm, 1), sample_loop_state.counter, "");
          out_smask_idx = lp_build_broadcast(gallivm, int_vec_type, out_smask_idx);
-         LLVMValueRef output_smask = LLVMBuildLoad(builder, out_sample_mask_storage, "");
+         LLVMValueRef output_smask = LLVMBuildLoad2(builder, int_vec_type, out_sample_mask_storage, "");
          LLVMValueRef smask_bit = LLVMBuildAnd(builder, output_smask, out_smask_idx, "");
          LLVMValueRef cmp = LLVMBuildICmp(builder, LLVMIntNE, smask_bit, lp_build_const_int_vec(gallivm, int_type, 0), "");
          smask_bit = LLVMBuildSExt(builder, cmp, int_vec_type, "");
@@ -1171,7 +1183,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
             idx = LLVMBuildAdd(builder, idx,
                                LLVMBuildMul(builder, sample_loop_state.counter, num_loop, ""), "");
          LLVMValueRef ptr = LLVMBuildGEP(builder, z_out, &idx, 1, "");
-         z = LLVMBuildLoad(builder, ptr, "output.z");
+         z = LLVMBuildLoad2(builder, vec_type, ptr, "output.z");
       } else {
          if (key->multisample) {
             lp_build_interp_soa_update_pos_dyn(interp, gallivm, loop_state.counter, key->multisample ? sample_loop_state.counter : NULL);
@@ -1199,7 +1211,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
             idx = LLVMBuildAdd(builder, idx,
                                LLVMBuildMul(builder, sample_loop_state.counter, num_loop, ""), "");
          LLVMValueRef ptr = LLVMBuildGEP(builder, s_out, &idx, 1, "");
-         stencil_refs[0] = LLVMBuildLoad(builder, ptr, "output.s");
+         stencil_refs[0] = LLVMBuildLoad2(builder, vec_type, ptr, "output.s");
          /* there's only one value, and spec says to discard additional bits */
          LLVMValueRef s_max_mask = lp_build_const_int_vec(gallivm, int_type, 255);
          stencil_refs[0] = LLVMBuildBitCast(builder, stencil_refs[0], int_vec_type, "");
@@ -1254,7 +1266,8 @@ generate_fs_loop(struct gallivm_state *gallivm,
    }
 
    if (key->occlusion_count) {
-      LLVMValueRef counter = lp_jit_thread_data_counter(gallivm, thread_data_ptr);
+      LLVMValueRef counter = lp_build_struct_get_ptr2(gallivm, jit_thread_data_type, thread_data_ptr,
+                                                    LP_JIT_THREAD_DATA_COUNTER, "counter");
       lp_build_name(counter, "counter");
 
       lp_build_occlusion_count(gallivm, type,
@@ -1269,7 +1282,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
       /* if the shader writes sample mask use that */
          LLVMValueRef out_smask_idx = LLVMBuildShl(builder, lp_build_const_int32(gallivm, 1), sample_loop_state.counter, "");
          out_smask_idx = lp_build_broadcast(gallivm, int_vec_type, out_smask_idx);
-         LLVMValueRef output_smask = LLVMBuildLoad(builder, out_sample_mask_storage, "");
+         LLVMValueRef output_smask = LLVMBuildLoad2(builder, int_vec_type, out_sample_mask_storage, "");
          LLVMValueRef smask_bit = LLVMBuildAnd(builder, output_smask, out_smask_idx, "");
          LLVMValueRef cmp = LLVMBuildICmp(builder, LLVMIntNE, smask_bit, lp_build_const_int_vec(gallivm, int_type, 0), "");
          smask_bit = LLVMBuildSExt(builder, cmp, int_vec_type, "");
@@ -3181,8 +3194,10 @@ generate_fragment(struct llvmpipe_context *lp,
     */
    if (shader->info.base.num_instructions > 1) {
       LLVMValueRef invocs, val;
-      invocs = lp_jit_thread_data_invocations(gallivm, thread_data_ptr);
-      val = LLVMBuildLoad(builder, invocs, "");
+      invocs = lp_build_struct_get_ptr2(gallivm, variant->jit_thread_data_type,
+                                      thread_data_ptr, LP_JIT_THREAD_DATA_INVOCATIONS,
+                                      "invocs");
+      val = LLVMBuildLoad2(builder, LLVMInt64TypeInContext(gallivm->context), invocs, "");
       val = LLVMBuildAdd(builder, val,
                          LLVMConstInt(LLVMInt64TypeInContext(gallivm->context), 1, 0),
                          "invoc_count");
@@ -3247,7 +3262,10 @@ generate_fragment(struct llvmpipe_context *lp,
 
       for (i = 0; i < num_fs; i++) {
          if (key->multisample) {
-            LLVMValueRef smask_val = LLVMBuildLoad(builder, lp_jit_context_sample_mask(gallivm, context_ptr), "");
+            LLVMValueRef smask_ptr = lp_build_struct_get_ptr2(gallivm, variant->jit_context_type,
+                                                              context_ptr, LP_JIT_CTX_SAMPLE_MASK,
+                                                              "sample_mask");
+            LLVMValueRef smask_val = LLVMBuildLoad2(builder, LLVMInt32TypeInContext(gallivm->context), smask_ptr, "");
 
             /*
              * For multisampling, extract the per-sample mask from the incoming 64-bit mask,
@@ -3291,6 +3309,8 @@ generate_fragment(struct llvmpipe_context *lp,
                        shader, key,
                        builder,
                        fs_type,
+                       variant->jit_context_type,
+                       variant->jit_thread_data_type,
                        context_ptr,
                        glob_sample_pos,
                        num_loop,
@@ -3315,7 +3335,7 @@ generate_fragment(struct llvmpipe_context *lp,
             LLVMValueRef sindexi = lp_build_const_int32(gallivm, idx);
             ptr = LLVMBuildGEP(builder, mask_store, &sindexi, 1, "");
 
-            fs_mask[idx] = LLVMBuildLoad(builder, ptr, "smask");
+            fs_mask[idx] = LLVMBuildLoad2(builder, lp_build_int_vec_type(gallivm, fs_type), ptr, "smask");
          }
 
          for (unsigned s = 0; s < key->min_samples; s++) {
@@ -3359,19 +3379,22 @@ generate_fragment(struct llvmpipe_context *lp,
                                || key->alpha.enabled)
                               && !shader->info.base.uses_kill);
 
-         color_ptr = LLVMBuildLoad(builder,
-                                   LLVMBuildGEP(builder, color_ptr_ptr,
-                                                &index, 1, ""),
-                                   "");
+         color_ptr = LLVMBuildLoad2(builder,
+                                    LLVMPointerType(int8_type, 0),
+                                    LLVMBuildGEP(builder, color_ptr_ptr,
+                                                 &index, 1, ""),
+                                    "");
 
-         stride = LLVMBuildLoad(builder,
-                                LLVMBuildGEP(builder, stride_ptr, &index, 1, ""),
-                                "");
+         stride = LLVMBuildLoad2(builder,
+                                 int32_type,
+                                 LLVMBuildGEP(builder, stride_ptr, &index, 1, ""),
+                                 "");
 
          if (key->cbuf_nr_samples[cbuf] > 1)
-            sample_stride = LLVMBuildLoad(builder,
-                                          LLVMBuildGEP(builder, color_sample_stride_ptr,
-                                                       &index, 1, ""), "");
+            sample_stride = LLVMBuildLoad2(builder,
+                                           int32_type,
+                                           LLVMBuildGEP(builder, color_sample_stride_ptr,
+                                                        &index, 1, ""), "");
 
          for (unsigned s = 0; s < key->cbuf_nr_samples[cbuf]; s++) {
             unsigned mask_idx = num_fs * (key->multisample ? s : 0);

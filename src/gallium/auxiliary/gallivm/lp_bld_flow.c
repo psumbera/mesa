@@ -233,7 +233,8 @@ lp_build_loop_begin(struct lp_build_loop_state *state,
 
    state->block = lp_build_insert_new_block(gallivm, "loop_begin");
 
-   state->counter_var = lp_build_alloca(gallivm, LLVMTypeOf(start), "loop_counter");
+   state->counter_type = LLVMTypeOf(start);
+   state->counter_var = lp_build_alloca(gallivm, state->counter_type, "loop_counter");
    state->gallivm = gallivm;
 
    LLVMBuildStore(builder, start, state->counter_var);
@@ -242,7 +243,7 @@ lp_build_loop_begin(struct lp_build_loop_state *state,
 
    LLVMPositionBuilderAtEnd(builder, state->block);
 
-   state->counter = LLVMBuildLoad(builder, state->counter_var, "");
+   state->counter = LLVMBuildLoad2(builder, state->counter_type, state->counter_var, "");
 }
 
 
@@ -272,7 +273,7 @@ lp_build_loop_end_cond(struct lp_build_loop_state *state,
 
    LLVMPositionBuilderAtEnd(builder, after_block);
 
-   state->counter = LLVMBuildLoad(builder, state->counter_var, "");
+   state->counter = LLVMBuildLoad2(builder, state->counter_type, state->counter_var, "");
 }
 
 void
@@ -287,7 +288,7 @@ void
 lp_build_loop_force_reload_counter(struct lp_build_loop_state *state)
 {
    LLVMBuilderRef builder = state->gallivm->builder;
-   state->counter = LLVMBuildLoad(builder, state->counter_var, "");
+   state->counter = LLVMBuildLoad2(builder, state->counter_type, state->counter_var, "");
 }
 
 void
@@ -324,7 +325,8 @@ lp_build_for_loop_begin(struct lp_build_for_loop_state *state,
 
    state->begin = lp_build_insert_new_block(gallivm, "loop_begin");
    state->step  = step;
-   state->counter_var = lp_build_alloca(gallivm, LLVMTypeOf(start), "loop_counter");
+   state->counter_type = LLVMTypeOf(start);
+   state->counter_var = lp_build_alloca(gallivm, state->counter_type, "loop_counter");
    state->gallivm = gallivm;
    state->cond = cmp_op;
    state->end = end;
@@ -333,7 +335,7 @@ lp_build_for_loop_begin(struct lp_build_for_loop_state *state,
    LLVMBuildBr(builder, state->begin);
 
    LLVMPositionBuilderAtEnd(builder, state->begin);
-   state->counter = LLVMBuildLoad(builder, state->counter_var, "");
+   state->counter = LLVMBuildLoad2(builder, state->counter_type, state->counter_var, "");
 
    state->body = lp_build_insert_new_block(gallivm, "loop_body");
    LLVMPositionBuilderAtEnd(builder, state->body);

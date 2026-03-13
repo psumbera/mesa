@@ -53,6 +53,20 @@
              offsetof(_ctype, _cmember))
 
 
+LLVMValueRef
+lp_build_struct_get_ptr2(struct gallivm_state *gallivm,
+                         LLVMTypeRef ptr_type,
+                         LLVMValueRef ptr,
+                         unsigned member,
+                         const char *name);
+
+LLVMValueRef
+lp_build_struct_get2(struct gallivm_state *gallivm,
+                     LLVMTypeRef ptr_type,
+                     LLVMValueRef ptr,
+                     unsigned member,
+                     const char *name);
+
 /**
  * Get value pointer to a structure member.
  */
@@ -70,6 +84,18 @@ lp_build_struct_get(struct gallivm_state *gallivm,
                     LLVMValueRef ptr,
                     unsigned member,
                     const char *name);
+
+LLVMValueRef
+lp_build_array_get_ptr2(struct gallivm_state *gallivm,
+                        LLVMTypeRef array_type,
+                        LLVMValueRef ptr,
+                        LLVMValueRef index);
+
+LLVMValueRef
+lp_build_array_get2(struct gallivm_state *gallivm,
+                    LLVMTypeRef array_type,
+                    LLVMValueRef ptr,
+                    LLVMValueRef index);
 
 /**
  * Get value pointer to an array element.
@@ -100,6 +126,12 @@ lp_build_array_set(struct gallivm_state *gallivm,
  * Get the value of an array element.
  */
 LLVMValueRef
+lp_build_pointer_get2(LLVMBuilderRef builder,
+                      LLVMTypeRef ptr_type,
+                      LLVMValueRef ptr,
+                      LLVMValueRef index);
+
+LLVMValueRef
 lp_build_pointer_get(LLVMBuilderRef builder,
                    LLVMValueRef ptr,
                    LLVMValueRef index);
@@ -110,6 +142,13 @@ lp_build_pointer_get(LLVMBuilderRef builder,
  * If the element size is different from the alignment this will
  * cause llvm to emit an unaligned load
  */
+LLVMValueRef
+lp_build_pointer_get_unaligned2(LLVMBuilderRef builder,
+                                LLVMTypeRef ptr_type,
+                                LLVMValueRef ptr,
+                                LLVMValueRef index,
+                                unsigned alignment);
+
 LLVMValueRef
 lp_build_pointer_get_unaligned(LLVMBuilderRef builder,
                                LLVMValueRef ptr,
