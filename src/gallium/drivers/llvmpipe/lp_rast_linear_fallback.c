@@ -96,6 +96,12 @@ shade_quads_all( struct lp_rasterizer_task *task,
                  const struct lp_rast_shader_inputs *inputs,
                  unsigned x, unsigned y )
 {
+   union {
+      uint64_t align;
+      uint8_t data[LP_RAST_COEFF_COPY_BYTES];
+   } coeff_copy;
+   const void *a0 = lp_rast_shade_inputs_a0(inputs, coeff_copy.data,
+                                            sizeof(coeff_copy.data));
    const struct lp_scene *scene = task->scene;
    const struct lp_rast_state *state = task->state;
    struct lp_fragment_shader_variant *variant = state->variant;
@@ -116,9 +122,8 @@ shade_quads_all( struct lp_rasterizer_task *task,
    variant->jit_function[RAST_WHOLE]( &state->jit_context,
                                       x, y,
                                       1,
-                                      (const float (*)[4])GET_A0(inputs),
-                                      (const float (*)[4])GET_DADX(inputs),
-                                      (const float (*)[4])GET_DADY(inputs),
+                                      a0,
+                                      inputs->stride,
                                       cbufs,
                                       NULL,
                                       0xffff,
@@ -133,6 +138,12 @@ shade_quads_mask(struct lp_rasterizer_task *task,
                  unsigned x, unsigned y,
                  unsigned mask)
 {
+   union {
+      uint64_t align;
+      uint8_t data[LP_RAST_COEFF_COPY_BYTES];
+   } coeff_copy;
+   const void *a0 = lp_rast_shade_inputs_a0(inputs, coeff_copy.data,
+                                            sizeof(coeff_copy.data));
    const struct lp_rast_state *state = task->state;
    struct lp_fragment_shader_variant *variant = state->variant;
    const struct lp_scene *scene = task->scene;
@@ -156,9 +167,8 @@ shade_quads_mask(struct lp_rasterizer_task *task,
    variant->jit_function[RAST_EDGE_TEST](&state->jit_context,
                                          x, y,
                                          1,
-                                         (const float (*)[4])GET_A0(inputs),
-                                         (const float (*)[4])GET_DADX(inputs),
-                                         (const float (*)[4])GET_DADY(inputs),
+                                         a0,
+                                         inputs->stride,
                                          cbufs,
                                          NULL,
                                          mask,

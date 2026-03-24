@@ -22,6 +22,7 @@
  * SOFTWARE.
  *
  **************************************************************************/
+#include <string.h>
 #include "util/u_memory.h"
 #include "util/simple_list.h"
 #include "util/os_time.h"
@@ -179,8 +180,15 @@ generate_compute(struct llvmpipe_context *lp,
    builder = gallivm->builder;
    assert(builder);
    LLVMPositionBuilderAtEnd(builder, block);
-   sampler = lp_llvm_sampler_soa_create(lp_cs_variant_key_samplers(key), key->nr_samplers);
-   image = lp_llvm_image_soa_create(lp_cs_variant_key_images(key), key->nr_images);
+   sampler = lp_llvm_sampler_soa_create(lp_cs_variant_key_samplers(key),
+                                        key->nr_samplers,
+                                        variant->jit_cs_context_type,
+                                        LP_JIT_CS_CTX_TEXTURES,
+                                        LP_JIT_CS_CTX_SAMPLERS);
+   image = lp_llvm_image_soa_create(lp_cs_variant_key_images(key),
+                                    key->nr_images,
+                                    variant->jit_cs_context_type,
+                                    LP_JIT_CS_CTX_IMAGES);
 
    struct lp_build_loop_state loop_state[4];
    LLVMValueRef num_x_loop;
@@ -908,6 +916,7 @@ lp_csctx_set_sampler_views(struct lp_cs_context *csctx,
                            struct pipe_sampler_view **views)
 {
    unsigned i, max_tex_num;
+   static const uint8_t dummy_tex_data[64];
 
    LP_DBG(DEBUG_SETUP, "%s\n", __FUNCTION__);
 
@@ -929,6 +938,11 @@ lp_csctx_set_sampler_views(struct lp_cs_context *csctx,
          struct llvmpipe_resource *lp_tex = llvmpipe_resource(res);
          struct lp_jit_texture *jit_tex;
          jit_tex = &csctx->cs.current.jit_context.textures[i];
+         memset(jit_tex, 0, sizeof(*jit_tex));
+         jit_tex->base = dummy_tex_data;
+         jit_tex->width = 1;
+         jit_tex->height = 1;
+         jit_tex->depth = 1;
 
          /* We're referencing the texture's internal data, so save a
           * reference to it.
@@ -1041,6 +1055,12 @@ lp_csctx_set_sampler_views(struct lp_cs_context *csctx,
       }
       else {
          pipe_resource_reference(&csctx->cs.current_tex[i], NULL);
+         memset(&csctx->cs.current.jit_context.textures[i], 0,
+                sizeof(csctx->cs.current.jit_context.textures[i]));
+         csctx->cs.current.jit_context.textures[i].base = dummy_tex_data;
+         csctx->cs.current.jit_context.textures[i].width = 1;
+         csctx->cs.current.jit_context.textures[i].height = 1;
+         csctx->cs.current.jit_context.textures[i].depth = 1;
       }
    }
    csctx->cs.current_tex_num = num;
@@ -1063,11 +1083,12 @@ lp_csctx_set_sampler_state(struct lp_cs_context *csctx,
 
    for (i = 0; i < PIPE_MAX_SAMPLERS; i++) {
       const struct pipe_sampler_state *sampler = i < num ? samplers[i] : NULL;
+      struct lp_jit_sampler *jit_sam;
+
+      jit_sam = &csctx->cs.current.jit_context.samplers[i];
+      memset(jit_sam, 0, sizeof(*jit_sam));
 
       if (sampler) {
-         struct lp_jit_sampler *jit_sam;
-         jit_sam = &csctx->cs.current.jit_context.samplers[i];
-
          jit_sam->min_lod = sampler->min_lod;
          jit_sam->max_lod = sampler->max_lod;
          jit_sam->lod_bias = sampler->lod_bias;
@@ -1120,6 +1141,7 @@ lp_csctx_set_cs_images(struct lp_cs_context *csctx,
                        struct pipe_image_view *images)
 {
    unsigned i;
+   static const uint8_t dummy_image_data[64];
 
    LP_DBG(DEBUG_SETUP, "%s %p\n", __FUNCTION__, (void *) images);
 
@@ -1134,6 +1156,11 @@ lp_csctx_set_cs_images(struct lp_cs_context *csctx,
       struct lp_jit_image *jit_image;
 
       jit_image = &csctx->cs.current.jit_context.images[i];
+      memset(jit_image, 0, sizeof(*jit_image));
+      jit_image->base = dummy_image_data;
+      jit_image->width = 1;
+      jit_image->height = 1;
+      jit_image->depth = 1;
       if (!lp_res)
          continue;
       if (!lp_res->dt) {
@@ -1187,6 +1214,12 @@ lp_csctx_set_cs_images(struct lp_cs_context *csctx,
    }
    for (; i < ARRAY_SIZE(csctx->images); i++) {
       util_copy_image_view(&csctx->images[i].current, NULL);
+      memset(&csctx->cs.current.jit_context.images[i], 0,
+             sizeof(csctx->cs.current.jit_context.images[i]));
+      csctx->cs.current.jit_context.images[i].base = dummy_image_data;
+      csctx->cs.current.jit_context.images[i].width = 1;
+      csctx->cs.current.jit_context.images[i].height = 1;
+      csctx->cs.current.jit_context.images[i].depth = 1;
    }
 }
 

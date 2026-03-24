@@ -877,7 +877,7 @@ lp_build_fetch_rgba_aos(struct gallivm_state *gallivm,
 
          LLVMBuildCall(builder, function, args, ARRAY_SIZE(args), "");
 
-         tmp = LLVMBuildLoad(builder, tmp_ptr, "");
+         tmp = LLVMBuildLoad2(builder, i32t, tmp_ptr, "");
 
          if (num_pixels == 1) {
             res = tmp;
@@ -978,7 +978,7 @@ lp_build_fetch_rgba_aos(struct gallivm_state *gallivm,
 
          LLVMBuildCall(builder, function, args, ARRAY_SIZE(args), "");
 
-         tmps[k] = LLVMBuildLoad(builder, tmp_ptr, "");
+         tmps[k] = LLVMBuildLoad2(builder, f32x4t, tmp_ptr, "");
       }
 
       lp_build_conv(gallivm,

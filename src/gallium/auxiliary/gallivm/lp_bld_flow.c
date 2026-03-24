@@ -168,8 +168,9 @@ lp_build_mask_begin(struct lp_build_mask_context *mask,
    memset(mask, 0, sizeof *mask);
 
    mask->reg_type = LLVMIntTypeInContext(gallivm->context, type.width * type.length);
+   mask->var_type = lp_build_int_vec_type(gallivm, type);
    mask->var = lp_build_alloca(gallivm,
-                               lp_build_int_vec_type(gallivm, type),
+                               mask->var_type,
                                "execution_mask");
 
    LLVMBuildStore(gallivm->builder, value, mask->var);
@@ -181,7 +182,8 @@ lp_build_mask_begin(struct lp_build_mask_context *mask,
 LLVMValueRef
 lp_build_mask_value(struct lp_build_mask_context *mask)
 {
-   return LLVMBuildLoad(mask->skip.gallivm->builder, mask->var, "");
+   return LLVMBuildLoad2(mask->skip.gallivm->builder, mask->var_type,
+                         mask->var, "");
 }
 
 

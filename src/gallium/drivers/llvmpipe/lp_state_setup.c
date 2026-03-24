@@ -72,6 +72,7 @@ struct lp_setup_args
    LLVMValueRef dadx;
    LLVMValueRef dady;
    LLVMValueRef key;
+   LLVMTypeRef vec4f_type;
 
    /* Derived:
     */
@@ -98,15 +99,15 @@ store_coef(struct gallivm_state *gallivm,
 
    LLVMBuildStore(builder,
                   a0,
-                  LLVMBuildGEP(builder, args->a0, &idx, 1, ""));
+                  LLVMBuildGEP2(builder, args->vec4f_type, args->a0, &idx, 1, ""));
 
    LLVMBuildStore(builder,
                   dadx,
-                  LLVMBuildGEP(builder, args->dadx, &idx, 1, ""));
+                  LLVMBuildGEP2(builder, args->vec4f_type, args->dadx, &idx, 1, ""));
 
    LLVMBuildStore(builder,
                   dady,
-                  LLVMBuildGEP(builder, args->dady, &idx, 1, ""));
+                  LLVMBuildGEP2(builder, args->vec4f_type, args->dady, &idx, 1, ""));
 }
 
 
@@ -158,6 +159,7 @@ emit_facing_coef(struct gallivm_state *gallivm,
 
 static LLVMValueRef
 vert_attrib(struct gallivm_state *gallivm,
+            LLVMTypeRef vert_type,
             LLVMValueRef vert,
             int attr,
             int elem,
@@ -165,9 +167,12 @@ vert_attrib(struct gallivm_state *gallivm,
 {
    LLVMBuilderRef b = gallivm->builder;
    LLVMValueRef idx[2];
+   LLVMTypeRef v_type = LLVMFloatTypeInContext(gallivm->context);
    idx[0] = lp_build_const_int32(gallivm, attr);
    idx[1] = lp_build_const_int32(gallivm, elem);
-   return LLVMBuildLoad(b, LLVMBuildGEP(b, vert, idx, 2, ""), name);
+   return LLVMBuildLoad2(b, v_type,
+                         LLVMBuildGEP2(b, vert_type, vert, idx, 2, ""),
+                         name);
 }
 
 
@@ -186,9 +191,15 @@ lp_twoside(struct gallivm_state *gallivm,
    LLVMValueRef front_facing = LLVMBuildICmp(b, LLVMIntEQ, facing,
                                              lp_build_const_int32(gallivm, 0), ""); /** need i1 for if condition */
 
-   a0_back = LLVMBuildLoad(b, LLVMBuildGEP(b, args->v0, &idx2, 1, ""), "v0a_back");
-   a1_back = LLVMBuildLoad(b, LLVMBuildGEP(b, args->v1, &idx2, 1, ""), "v1a_back");
-   a2_back = LLVMBuildLoad(b, LLVMBuildGEP(b, args->v2, &idx2, 1, ""), "v2a_back");
+   a0_back = LLVMBuildLoad2(b, args->vec4f_type,
+                            LLVMBuildGEP2(b, args->vec4f_type, args->v0, &idx2, 1, ""),
+                            "v0a_back");
+   a1_back = LLVMBuildLoad2(b, args->vec4f_type,
+                            LLVMBuildGEP2(b, args->vec4f_type, args->v1, &idx2, 1, ""),
+                            "v1a_back");
+   a2_back = LLVMBuildLoad2(b, args->vec4f_type,
+                            LLVMBuildGEP2(b, args->vec4f_type, args->v2, &idx2, 1, ""),
+                            "v2a_back");
 
    /* Possibly swap the front and back attrib values,
     *
@@ -339,9 +350,15 @@ load_attribute(struct gallivm_state *gallivm,
 
    /* Load the vertex data
     */
-   attribv[0] = LLVMBuildLoad(b, LLVMBuildGEP(b, args->v0, &idx, 1, ""), "v0a");
-   attribv[1] = LLVMBuildLoad(b, LLVMBuildGEP(b, args->v1, &idx, 1, ""), "v1a");
-   attribv[2] = LLVMBuildLoad(b, LLVMBuildGEP(b, args->v2, &idx, 1, ""), "v2a");
+   attribv[0] = LLVMBuildLoad2(b, args->vec4f_type,
+                               LLVMBuildGEP2(b, args->vec4f_type, args->v0, &idx, 1, ""),
+                               "v0a");
+   attribv[1] = LLVMBuildLoad2(b, args->vec4f_type,
+                               LLVMBuildGEP2(b, args->vec4f_type, args->v1, &idx, 1, ""),
+                               "v1a");
+   attribv[2] = LLVMBuildLoad2(b, args->vec4f_type,
+                               LLVMBuildGEP2(b, args->vec4f_type, args->v2, &idx, 1, ""),
+                               "v2a");
 
 
    /* Potentially modify it according to twoside, etc:
@@ -459,11 +476,14 @@ apply_perspective_corr( struct gallivm_state *gallivm,
    /* premultiply by 1/w  (v[0][3] is always 1/w):
     */
    LLVMValueRef v0_oow = lp_build_broadcast_scalar(&args->bld,
-                            vert_attrib(gallivm, args->v0, 0, 3, "v0_oow"));
+                            vert_attrib(gallivm, args->vec4f_type,
+                                        args->v0, 0, 3, "v0_oow"));
    LLVMValueRef v1_oow = lp_build_broadcast_scalar(&args->bld,
-                            vert_attrib(gallivm, args->v1, 0, 3, "v1_oow"));
+                            vert_attrib(gallivm, args->vec4f_type,
+                                        args->v1, 0, 3, "v1_oow"));
    LLVMValueRef v2_oow = lp_build_broadcast_scalar(&args->bld,
-                            vert_attrib(gallivm, args->v2, 0, 3, "v2_oow"));
+                            vert_attrib(gallivm, args->vec4f_type,
+                                        args->v2, 0, 3, "v2_oow"));
 
    attribv[0] = LLVMBuildFMul(b, attribv[0], v0_oow, "v0_oow_v0a");
    attribv[1] = LLVMBuildFMul(b, attribv[1], v1_oow, "v1_oow_v1a");
@@ -707,6 +727,7 @@ generate_setup_variant(struct lp_setup_variant_key *key,
    args.dadx     = LLVMGetParam(variant->function, 5);
    args.dady     = LLVMGetParam(variant->function, 6);
    args.key      = LLVMGetParam(variant->function, 7);
+   args.vec4f_type = vec4f_type;
 
    lp_build_name(args.v0, "in_v0");
    lp_build_name(args.v1, "in_v1");

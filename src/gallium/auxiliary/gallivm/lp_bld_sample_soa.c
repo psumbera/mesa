@@ -1302,18 +1302,21 @@ lp_build_sample_image_linear(struct lp_build_sample_context *bld,
 
       lp_build_endif(&edge_if);
 
-      x00 = LLVMBuildLoad(builder, xs[0], "");
-      x01 = LLVMBuildLoad(builder, xs[1], "");
-      x10 = LLVMBuildLoad(builder, xs[2], "");
-      x11 = LLVMBuildLoad(builder, xs[3], "");
-      y00 = LLVMBuildLoad(builder, ys[0], "");
-      y01 = LLVMBuildLoad(builder, ys[1], "");
-      y10 = LLVMBuildLoad(builder, ys[2], "");
-      y11 = LLVMBuildLoad(builder, ys[3], "");
-      z00 = LLVMBuildLoad(builder, zs[0], "");
-      z01 = LLVMBuildLoad(builder, zs[1], "");
-      z10 = LLVMBuildLoad(builder, zs[2], "");
-      z11 = LLVMBuildLoad(builder, zs[3], "");
+      {
+         LLVMTypeRef type = ivec_bld->vec_type;
+         x00 = LLVMBuildLoad2(builder, type, xs[0], "");
+         x01 = LLVMBuildLoad2(builder, type, xs[1], "");
+         x10 = LLVMBuildLoad2(builder, type, xs[2], "");
+         x11 = LLVMBuildLoad2(builder, type, xs[3], "");
+         y00 = LLVMBuildLoad2(builder, type, ys[0], "");
+         y01 = LLVMBuildLoad2(builder, type, ys[1], "");
+         y10 = LLVMBuildLoad2(builder, type, ys[2], "");
+         y11 = LLVMBuildLoad2(builder, type, ys[3], "");
+         z00 = LLVMBuildLoad2(builder, type, zs[0], "");
+         z01 = LLVMBuildLoad2(builder, type, zs[1], "");
+         z10 = LLVMBuildLoad2(builder, type, zs[2], "");
+         z11 = LLVMBuildLoad2(builder, type, zs[3], "");
+      }
    }
 
    if (linear_mask) {
@@ -1411,7 +1414,9 @@ lp_build_sample_image_linear(struct lp_build_sample_context *bld,
          colorss[2] = lp_build_alloca(bld->gallivm, coord_bld->vec_type, "cs2");
          colorss[3] = lp_build_alloca(bld->gallivm, coord_bld->vec_type, "cs3");
 
-         have_corner = LLVMBuildLoad(builder, have_corners, "");
+         have_corner = LLVMBuildLoad2(builder,
+                                      LLVMInt1TypeInContext(bld->gallivm->context),
+                                      have_corners, "");
 
          lp_build_if(&corner_if, bld->gallivm, have_corner);
 
@@ -1668,10 +1673,10 @@ lp_build_sample_image_linear(struct lp_build_sample_context *bld,
 
          lp_build_endif(&corner_if);
 
-         colors0[0] = LLVMBuildLoad(builder, colorss[0], "");
-         colors0[1] = LLVMBuildLoad(builder, colorss[1], "");
-         colors0[2] = LLVMBuildLoad(builder, colorss[2], "");
-         colors0[3] = LLVMBuildLoad(builder, colorss[3], "");
+         colors0[0] = LLVMBuildLoad2(builder, coord_bld->vec_type, colorss[0], "");
+         colors0[1] = LLVMBuildLoad2(builder, coord_bld->vec_type, colorss[1], "");
+         colors0[2] = LLVMBuildLoad2(builder, coord_bld->vec_type, colorss[2], "");
+         colors0[3] = LLVMBuildLoad2(builder, coord_bld->vec_type, colorss[3], "");
       }
 
       if (dims == 3) {
@@ -2306,7 +2311,8 @@ lp_build_sample_aniso(struct lp_build_sample_context *bld,
    LLVMBuildBr(builder, v_loop_block);
    LLVMPositionBuilderAtEnd(builder, v_loop_block);
 
-   LLVMValueRef v_val = LLVMBuildLoad(builder, v_limiter, "");
+   LLVMValueRef v_val = LLVMBuildLoad2(builder, bld->int_coord_bld.vec_type,
+                                       v_limiter, "");
    LLVMValueRef v_mask = LLVMBuildICmp(builder,
                                        LLVMIntSLE,
                                        v_val,
@@ -2338,7 +2344,9 @@ lp_build_sample_aniso(struct lp_build_sample_context *bld,
       LLVMBuildBr(builder, u_loop_block);
       LLVMPositionBuilderAtEnd(builder, u_loop_block);
 
-      LLVMValueRef u_val = LLVMBuildLoad(builder, u_limiter, "");
+      LLVMValueRef u_val = LLVMBuildLoad2(builder,
+                                          bld->int_coord_bld.vec_type,
+                                          u_limiter, "");
       LLVMValueRef u_mask = LLVMBuildICmp(builder,
                                           LLVMIntSLE,
                                           u_val,
@@ -2347,7 +2355,9 @@ lp_build_sample_aniso(struct lp_build_sample_context *bld,
       /* loop over U values */
       {
          /* q = (int)q */
-         q = lp_build_itrunc(coord_bld, LLVMBuildLoad(builder, q_store, ""));
+         q = lp_build_itrunc(coord_bld,
+                             LLVMBuildLoad2(builder, coord_bld->vec_type,
+                                            q_store, ""));
 
          /*
           * avoid OOB access to filter table, generate a mask for q > 1024,
@@ -2403,7 +2413,9 @@ lp_build_sample_aniso(struct lp_build_sample_context *bld,
                                        temp_colors);
 
          for (chan = 0; chan < 4; chan++) {
-            LLVMValueRef tcolor = LLVMBuildLoad(builder, colors0[chan], "");
+            LLVMValueRef tcolor = LLVMBuildLoad2(builder,
+                                                 bld->texel_bld.vec_type,
+                                                 colors0[chan], "");
 
             tcolor = lp_build_add(&bld->texel_bld, tcolor, lp_build_mul(&bld->texel_bld, temp_colors[chan], weights));
             LLVMBuildStore(builder, tcolor, colors0[chan]);
@@ -2411,22 +2423,24 @@ lp_build_sample_aniso(struct lp_build_sample_context *bld,
 
          /* multiple colors by weight and add in. */
          /* den += weight; */
-         LLVMValueRef den = LLVMBuildLoad(builder, den_store, "");
+         LLVMValueRef den = LLVMBuildLoad2(builder, bld->texel_bld.vec_type,
+                                           den_store, "");
          den = lp_build_add(&bld->texel_bld, den, weights);
          LLVMBuildStore(builder, den, den_store);
 
          lp_build_endif(&noloadw0);
          /* q += dq; */
          /* dq += ddq; */
-         q = LLVMBuildLoad(builder, q_store, "");
-         dq = LLVMBuildLoad(builder, dq_store, "");
+         q = LLVMBuildLoad2(builder, coord_bld->vec_type, q_store, "");
+         dq = LLVMBuildLoad2(builder, coord_bld->vec_type, dq_store, "");
          q = lp_build_add(coord_bld, q, dq);
          dq = lp_build_add(coord_bld, dq, ddq);
          LLVMBuildStore(builder, q, q_store);
          LLVMBuildStore(builder, dq, dq_store);
       }
       /* u += 1 */
-      u_val = LLVMBuildLoad(builder, u_limiter, "");
+      u_val = LLVMBuildLoad2(builder, bld->int_coord_bld.vec_type,
+                             u_limiter, "");
       u_val = lp_build_add(&bld->int_coord_bld, u_val, bld->int_coord_bld.one);
       LLVMBuildStore(builder, u_val, u_limiter);
 
@@ -2447,7 +2461,8 @@ lp_build_sample_aniso(struct lp_build_sample_context *bld,
    }
 
    /* v += 1 */
-   v_val = LLVMBuildLoad(builder, v_limiter, "");
+   v_val = LLVMBuildLoad2(builder, bld->int_coord_bld.vec_type, v_limiter,
+                          "");
    v_val = lp_build_add(&bld->int_coord_bld, v_val, bld->int_coord_bld.one);
    LLVMBuildStore(builder, v_val, v_limiter);
 
@@ -2465,10 +2480,15 @@ lp_build_sample_aniso(struct lp_build_sample_context *bld,
 
    LLVMPositionBuilderAtEnd(builder, v_end_loop);
 
-   LLVMValueRef den = LLVMBuildLoad(builder, den_store, "");
+   LLVMValueRef den = LLVMBuildLoad2(builder, bld->texel_bld.vec_type,
+                                     den_store, "");
 
    for (chan = 0; chan < 4; chan++)
-      colors0[chan] = lp_build_div(&bld->texel_bld, LLVMBuildLoad(builder, colors0[chan], ""), den);
+      colors0[chan] = lp_build_div(&bld->texel_bld,
+                                   LLVMBuildLoad2(builder,
+                                                  bld->texel_bld.vec_type,
+                                                  colors0[chan], ""),
+                                   den);
    LLVMValueRef den0 = lp_build_cmp(&bld->coord_bld, PIPE_FUNC_EQUAL, den, bld->coord_bld.zero);
 
    LLVMValueRef den0_any = lp_build_any_true_range(&bld->coord_bld, bld->coord_bld.type.length, den0);
@@ -2706,11 +2726,16 @@ lp_build_clamp_border_color(struct lp_build_sample_context *bld,
     * we just cast the pointer to float array to pointer to vec4
     * (int or float).
     */
-   border_color_ptr = lp_build_array_get_ptr(gallivm, border_color_ptr,
-                                             lp_build_const_int32(gallivm, 0));
+   {
+      LLVMTypeRef border_color_type =
+         LLVMArrayType(LLVMFloatTypeInContext(gallivm->context), 4);
+      border_color_ptr = lp_build_array_get_ptr2(gallivm, border_color_type,
+                                                 border_color_ptr,
+                                                 lp_build_const_int32(gallivm, 0));
+   }
    border_color_ptr = LLVMBuildBitCast(builder, border_color_ptr,
                                        LLVMPointerType(vec4_bld.vec_type, 0), "");
-   border_color = LLVMBuildLoad(builder, border_color_ptr, "");
+   border_color = LLVMBuildLoad2(builder, vec4_bld.vec_type, border_color_ptr, "");
    /* we don't have aligned type in the dynamic state unfortunately */
    LLVMSetAlignment(border_color, 4);
 
@@ -3055,7 +3080,8 @@ lp_build_sample_general(struct lp_build_sample_context *bld,
    }
 
    for (chan = 0; chan < 4; ++chan) {
-     colors_out[chan] = LLVMBuildLoad(builder, texels[chan], "");
+     colors_out[chan] = LLVMBuildLoad2(builder, bld->texel_bld.vec_type,
+                                       texels[chan], "");
      lp_build_name(colors_out[chan], "sampler%u_texel_%c", sampler_unit, "xyzw"[chan]);
    }
 }
@@ -3224,6 +3250,35 @@ lp_build_sample_nop(struct gallivm_state *gallivm,
    for (chan = 0; chan < 4; chan++) {
       texel_out[chan] = one;
    }  
+}
+
+static LLVMValueRef
+lp_build_null_safe_texture_base_ptr(struct gallivm_state *gallivm,
+                                    LLVMValueRef base_ptr)
+{
+   LLVMTypeRef i8_type = LLVMInt8TypeInContext(gallivm->context);
+   LLVMTypeRef dummy_type = LLVMArrayType(i8_type, 256);
+   LLVMValueRef dummy = LLVMGetNamedGlobal(gallivm->module,
+                                           "lp_dummy_texture_data");
+   LLVMValueRef safe_ptr;
+   LLVMValueRef base_ptr_is_null;
+
+   if (!dummy) {
+      dummy = LLVMAddGlobal(gallivm->module, dummy_type,
+                            "lp_dummy_texture_data");
+      LLVMSetLinkage(dummy, LLVMPrivateLinkage);
+      LLVMSetGlobalConstant(dummy, 1);
+      LLVMSetInitializer(dummy, LLVMConstNull(dummy_type));
+      LLVMSetUnnamedAddress(dummy, LLVMGlobalUnnamedAddr);
+   }
+
+   safe_ptr = LLVMBuildBitCast(gallivm->builder, dummy, LLVMTypeOf(base_ptr),
+                               "safe_texture_base_ptr");
+   base_ptr_is_null = LLVMBuildICmp(gallivm->builder, LLVMIntEQ, base_ptr,
+                                    LLVMConstNull(LLVMTypeOf(base_ptr)),
+                                    "texture_base_ptr_is_null");
+   return LLVMBuildSelect(gallivm->builder, base_ptr_is_null, safe_ptr,
+                          base_ptr, "texture_base_ptr");
 }
 
 static struct lp_type
@@ -3529,13 +3584,17 @@ lp_build_sample_soa_code(struct gallivm_state *gallivm,
    tex_width = dynamic_state->width(dynamic_state, gallivm,
                                     context_ptr, texture_index, NULL);
    bld.row_stride_array = dynamic_state->row_stride(dynamic_state, gallivm,
-                                                    context_ptr, texture_index, NULL);
+                                                    context_ptr, texture_index, NULL,
+                                                    &bld.row_stride_type);
    bld.img_stride_array = dynamic_state->img_stride(dynamic_state, gallivm,
-                                                    context_ptr, texture_index, NULL);
+                                                    context_ptr, texture_index, NULL,
+                                                    &bld.img_stride_type);
    bld.base_ptr = dynamic_state->base_ptr(dynamic_state, gallivm,
                                           context_ptr, texture_index, NULL);
+   bld.base_ptr = lp_build_null_safe_texture_base_ptr(gallivm, bld.base_ptr);
    bld.mip_offsets = dynamic_state->mip_offsets(dynamic_state, gallivm,
-                                                context_ptr, texture_index, NULL);
+                                                context_ptr, texture_index, NULL,
+                                                &bld.mip_offsets_type);
 
    if (fetch_ms)
       bld.sample_stride = lp_build_broadcast_scalar(&bld.int_coord_bld, dynamic_state->sample_stride(dynamic_state, gallivm,
@@ -3738,9 +3797,12 @@ lp_build_sample_soa_code(struct gallivm_state *gallivm,
          bld4.dynamic_state = bld.dynamic_state;
          bld4.format_desc = bld.format_desc;
          bld4.dims = bld.dims;
+         bld4.row_stride_type = bld.row_stride_type;
          bld4.row_stride_array = bld.row_stride_array;
+         bld4.img_stride_type = bld.img_stride_type;
          bld4.img_stride_array = bld.img_stride_array;
          bld4.base_ptr = bld.base_ptr;
+         bld4.mip_offsets_type = bld.mip_offsets_type;
          bld4.mip_offsets = bld.mip_offsets;
          bld4.int_size = bld.int_size;
          bld4.cache = bld.cache;
@@ -4529,10 +4591,13 @@ lp_build_do_atomic_soa(struct gallivm_state *gallivm,
       return;
    }
 
-   LLVMValueRef atom_res = lp_build_alloca(gallivm,
-                                           LLVMVectorType(LLVMInt32TypeInContext(gallivm->context), type.length), "");
+   LLVMTypeRef atom_res_type =
+      LLVMVectorType(LLVMInt32TypeInContext(gallivm->context), type.length);
+   LLVMValueRef atom_res = lp_build_alloca(gallivm, atom_res_type, "");
 
-   offset = LLVMBuildGEP(gallivm->builder, base_ptr, &offset, 1, "");
+   offset = LLVMBuildGEP2(gallivm->builder,
+                          LLVMInt8TypeInContext(gallivm->context),
+                          base_ptr, &offset, 1, "");
    struct lp_build_loop_state loop_state;
    lp_build_loop_begin(&loop_state, gallivm, lp_build_const_int32(gallivm, 0));
    struct lp_build_if_state ifthen;
@@ -4567,14 +4632,16 @@ lp_build_do_atomic_soa(struct gallivm_state *gallivm,
                                 false);
    }
 
-   LLVMValueRef temp_res = LLVMBuildLoad(gallivm->builder, atom_res, "");
+   LLVMValueRef temp_res = LLVMBuildLoad2(gallivm->builder, atom_res_type,
+                                          atom_res, "");
    temp_res = LLVMBuildInsertElement(gallivm->builder, temp_res, data, loop_state.counter, "");
    LLVMBuildStore(gallivm->builder, temp_res, atom_res);
 
    lp_build_endif(&ifthen);
    lp_build_loop_end_cond(&loop_state, lp_build_const_int32(gallivm, type.length),
                           NULL, LLVMIntUGE);
-   atomic_result[0] = LLVMBuildLoad(gallivm->builder, atom_res, "");
+   atomic_result[0] = LLVMBuildLoad2(gallivm->builder, atom_res_type,
+                                     atom_res, "");
 }
 
 static void
@@ -4620,9 +4687,11 @@ lp_build_img_op_soa(const struct lp_static_texture_state *static_texture_state,
    LLVMValueRef offset, i, j;
 
    LLVMValueRef row_stride = dynamic_state->row_stride(dynamic_state, gallivm,
-                                                       params->context_ptr, params->image_index, NULL);
+                                                       params->context_ptr, params->image_index, NULL,
+                                                       NULL);
    LLVMValueRef img_stride = dynamic_state->img_stride(dynamic_state, gallivm,
-                                                       params->context_ptr, params->image_index, NULL);
+                                                       params->context_ptr, params->image_index, NULL,
+                                                       NULL);
    LLVMValueRef base_ptr = dynamic_state->base_ptr(dynamic_state, gallivm,
                                                    params->context_ptr, params->image_index, NULL);
    LLVMValueRef width = dynamic_state->width(dynamic_state, gallivm,

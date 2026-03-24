@@ -65,7 +65,10 @@ lp_build_struct_get_ptr(struct gallivm_state *gallivm,
                         unsigned member,
                         const char *name)
 {
-   return lp_build_struct_get_ptr2(gallivm, LLVMGetElementType(LLVMTypeOf(ptr)), ptr, member, name);
+   LLVMTypeRef ptr_type = lp_llvm_pointee_type(ptr);
+   assert(ptr_type);
+   assert(LLVMGetTypeKind(ptr_type) == LLVMStructTypeKind);
+   return lp_build_struct_get_ptr2(gallivm, ptr_type, ptr, member, name);
 }
 
 LLVMValueRef
@@ -89,7 +92,10 @@ lp_build_struct_get(struct gallivm_state *gallivm,
                     unsigned member,
                     const char *name)
 {
-   return lp_build_struct_get2(gallivm, LLVMGetElementType(LLVMTypeOf(ptr)), ptr, member, name);
+   LLVMTypeRef ptr_type = lp_llvm_pointee_type(ptr);
+   assert(ptr_type);
+   assert(LLVMGetTypeKind(ptr_type) == LLVMStructTypeKind);
+   return lp_build_struct_get2(gallivm, ptr_type, ptr, member, name);
 }
 
 LLVMValueRef
@@ -132,7 +138,11 @@ lp_build_array_get_ptr(struct gallivm_state *gallivm,
                        LLVMValueRef ptr,
                        LLVMValueRef index)
 {
-   return lp_build_array_get_ptr2(gallivm, LLVMGetElementType(LLVMTypeOf(ptr)), ptr, index);
+   assert(LLVMGetTypeKind(LLVMTypeOf(ptr)) == LLVMPointerTypeKind);
+   LLVMTypeRef array_type = lp_llvm_pointee_type(ptr);
+   assert(array_type);
+   assert(LLVMGetTypeKind(array_type) == LLVMArrayTypeKind);
+   return lp_build_array_get_ptr2(gallivm, array_type, ptr, index);
 }
 
 
@@ -141,7 +151,11 @@ lp_build_array_get(struct gallivm_state *gallivm,
                    LLVMValueRef ptr,
                    LLVMValueRef index)
 {
-   return lp_build_array_get2(gallivm, LLVMGetElementType(LLVMTypeOf(ptr)), ptr, index);
+   assert(LLVMGetTypeKind(LLVMTypeOf(ptr)) == LLVMPointerTypeKind);
+   LLVMTypeRef array_type = lp_llvm_pointee_type(ptr);
+   assert(array_type);
+   assert(LLVMGetTypeKind(array_type) == LLVMArrayTypeKind);
+   return lp_build_array_get2(gallivm, array_type, ptr, index);
 }
 
 
@@ -152,9 +166,11 @@ lp_build_array_set(struct gallivm_state *gallivm,
                    LLVMValueRef value)
 {
    LLVMValueRef element_ptr;
+   LLVMTypeRef array_type = lp_llvm_pointee_type(ptr);
+   assert(array_type);
    assert(LLVMGetTypeKind(LLVMTypeOf(ptr)) == LLVMPointerTypeKind);
-   assert(LLVMGetTypeKind(LLVMGetElementType(LLVMTypeOf(ptr))) == LLVMArrayTypeKind);
-   element_ptr = lp_build_array_get_ptr(gallivm, ptr, index);
+   assert(LLVMGetTypeKind(array_type) == LLVMArrayTypeKind);
+   element_ptr = lp_build_array_get_ptr2(gallivm, array_type, ptr, index);
    LLVMBuildStore(gallivm->builder, value, element_ptr);
 }
 
@@ -193,7 +209,10 @@ lp_build_pointer_get(LLVMBuilderRef builder,
                      LLVMValueRef ptr,
                      LLVMValueRef index)
 {
-   return lp_build_pointer_get2(builder, LLVMGetElementType(LLVMTypeOf(ptr)), ptr, index);
+   assert(LLVMGetTypeKind(LLVMTypeOf(ptr)) == LLVMPointerTypeKind);
+   LLVMTypeRef ptr_type = lp_llvm_pointee_type(ptr);
+   assert(ptr_type);
+   return lp_build_pointer_get2(builder, ptr_type, ptr, index);
 }
 
 LLVMValueRef
@@ -202,8 +221,26 @@ lp_build_pointer_get_unaligned(LLVMBuilderRef builder,
                                LLVMValueRef index,
                                unsigned alignment)
 {
-   return lp_build_pointer_get_unaligned2(builder, LLVMGetElementType(LLVMTypeOf(ptr)), ptr, index, alignment);
+   assert(LLVMGetTypeKind(LLVMTypeOf(ptr)) == LLVMPointerTypeKind);
+   LLVMTypeRef ptr_type = lp_llvm_pointee_type(ptr);
+   assert(ptr_type);
+   return lp_build_pointer_get_unaligned2(builder, ptr_type, ptr, index, alignment);
 }
+
+void
+lp_build_pointer_set2(LLVMBuilderRef builder,
+                      LLVMTypeRef elem_type,
+                      LLVMValueRef ptr,
+                      LLVMValueRef index,
+                      LLVMValueRef value)
+{
+   LLVMValueRef element_ptr;
+   assert(LLVMGetTypeKind(LLVMTypeOf(ptr)) == LLVMPointerTypeKind);
+   assert(elem_type);
+   element_ptr = LLVMBuildGEP2(builder, elem_type, ptr, &index, 1, "");
+   LLVMBuildStore(builder, value, element_ptr);
+}
+
 
 void
 lp_build_pointer_set(LLVMBuilderRef builder,
@@ -211,9 +248,28 @@ lp_build_pointer_set(LLVMBuilderRef builder,
                      LLVMValueRef index,
                      LLVMValueRef value)
 {
+   assert(LLVMGetTypeKind(LLVMTypeOf(ptr)) == LLVMPointerTypeKind);
+   LLVMTypeRef elem_type = lp_llvm_pointee_type(ptr);
+   assert(elem_type);
+   lp_build_pointer_set2(builder, elem_type, ptr, index, value);
+}
+
+
+void
+lp_build_pointer_set_unaligned2(LLVMBuilderRef builder,
+                                LLVMTypeRef elem_type,
+                                LLVMValueRef ptr,
+                                LLVMValueRef index,
+                                LLVMValueRef value,
+                                unsigned alignment)
+{
    LLVMValueRef element_ptr;
-   element_ptr = LLVMBuildGEP(builder, ptr, &index, 1, "");
-   LLVMBuildStore(builder, value, element_ptr);
+   LLVMValueRef instr;
+   assert(LLVMGetTypeKind(LLVMTypeOf(ptr)) == LLVMPointerTypeKind);
+   assert(elem_type);
+   element_ptr = LLVMBuildGEP2(builder, elem_type, ptr, &index, 1, "");
+   instr = LLVMBuildStore(builder, value, element_ptr);
+   LLVMSetAlignment(instr, alignment);
 }
 
 
@@ -224,9 +280,9 @@ lp_build_pointer_set_unaligned(LLVMBuilderRef builder,
                                LLVMValueRef value,
                                unsigned alignment)
 {
-   LLVMValueRef element_ptr;
-   LLVMValueRef instr;
-   element_ptr = LLVMBuildGEP(builder, ptr, &index, 1, "");
-   instr = LLVMBuildStore(builder, value, element_ptr);
-   LLVMSetAlignment(instr, alignment);
+   assert(LLVMGetTypeKind(LLVMTypeOf(ptr)) == LLVMPointerTypeKind);
+   LLVMTypeRef elem_type = lp_llvm_pointee_type(ptr);
+   assert(elem_type);
+   lp_build_pointer_set_unaligned2(builder, elem_type, ptr, index, value,
+                                   alignment);
 }

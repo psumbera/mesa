@@ -28,6 +28,8 @@
 #ifndef LP_RAST_PRIV_H
 #define LP_RAST_PRIV_H
 
+#include <string.h>
+
 #include "util/format/u_format.h"
 #include "util/u_thread.h"
 #include "gallivm/lp_bld_debug.h"
@@ -41,6 +43,7 @@
 
 #define TILE_VECTOR_HEIGHT 4
 #define TILE_VECTOR_WIDTH 4
+#define LP_RAST_COEFF_COPY_BYTES 4096
 
 /* If we crash in a jitted function, we can examine jit_line and jit_state
  * to get some info.  This is not thread-safe, however.
@@ -75,6 +78,21 @@ extern const struct lp_rasterizer_task *jit_task;
 
 struct lp_rasterizer;
 struct cmd_bin;
+
+static inline const void *
+lp_rast_shade_inputs_a0(const struct lp_rast_shader_inputs *inputs,
+                        void *coeff_copy,
+                        size_t coeff_copy_size)
+{
+   const void *a0 = GET_A0(inputs);
+   size_t coeff_bytes = (size_t)inputs->stride * 3;
+
+   if (!a0 || !coeff_copy || coeff_bytes == 0 || coeff_bytes > coeff_copy_size)
+      return a0;
+
+   memcpy(coeff_copy, a0, coeff_bytes);
+   return coeff_copy;
+}
 
 /**
  * Per-thread rasterization state
@@ -271,6 +289,13 @@ lp_rast_shade_quads_all( struct lp_rasterizer_task *task,
     * allocated 4x4 blocks hence need to filter them out here.
     */
    if ((x % TILE_SIZE) < task->width && (y % TILE_SIZE) < task->height) {
+      union {
+         uint64_t align;
+         uint8_t data[LP_RAST_COEFF_COPY_BYTES];
+      } coeff_copy;
+      const void *a0 = lp_rast_shade_inputs_a0(inputs, coeff_copy.data,
+                                               sizeof(coeff_copy.data));
+
       /* Propagate non-interpolated raster state. */
       task->thread_data.raster_state.viewport_index = inputs->viewport_index;
       task->thread_data.raster_state.view_index = inputs->view_index;
@@ -280,9 +305,8 @@ lp_rast_shade_quads_all( struct lp_rasterizer_task *task,
       variant->jit_function[RAST_WHOLE]( &state->jit_context,
                                          x, y,
                                          inputs->frontfacing,
-                                         GET_A0(inputs),
-                                         GET_DADX(inputs),
-                                         GET_DADY(inputs),
+                                         a0,
+                                         inputs->stride,
                                          color,
                                          depth,
                                          mask,

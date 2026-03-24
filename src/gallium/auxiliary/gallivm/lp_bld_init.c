@@ -275,7 +275,17 @@ init_gallivm_engine(struct gallivm_state *gallivm)
          optlevel = None;
       }
       else {
+#if defined(__sun) && LLVM_VERSION_MAJOR >= 21
+         /*
+          * Old Mesa's MCJIT-generated shaders can still hit
+          * SelectionDAGISel::CannotYetSelect on Solaris with LLVM 21 at the
+          * default backend optimization level. Keep codegen at -O0 as a
+          * compatibility fallback for this port.
+          */
+         optlevel = None;
+#else
          optlevel = Default;
+#endif
       }
 
       ret = lp_build_create_jit_compiler_for_module(&gallivm->engine,

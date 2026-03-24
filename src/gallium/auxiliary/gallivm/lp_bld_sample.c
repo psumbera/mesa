@@ -1161,6 +1161,26 @@ lp_build_linear_mip_levels(struct lp_build_sample_context *bld,
 
 
 /**
+ * A helper function that factorizes this common pattern.
+ */
+static LLVMValueRef
+lp_sample_load_mip_value(struct gallivm_state *gallivm,
+                         LLVMTypeRef ptr_type,
+                         LLVMValueRef offsets,
+                         LLVMValueRef index1)
+{
+   LLVMValueRef zero = lp_build_const_int32(gallivm, 0);
+   LLVMValueRef indexes[2] = {zero, index1};
+   LLVMValueRef ptr = LLVMBuildGEP2(gallivm->builder, ptr_type, offsets,
+                                    indexes, ARRAY_SIZE(indexes), "");
+
+   return LLVMBuildLoad2(gallivm->builder,
+                         LLVMInt32TypeInContext(gallivm->context),
+                         ptr, "");
+}
+
+
+/**
  * Return pointer to a single mipmap level.
  * \param level  integer mipmap level
  */
@@ -1169,13 +1189,13 @@ lp_build_get_mipmap_level(struct lp_build_sample_context *bld,
                           LLVMValueRef level)
 {
    LLVMBuilderRef builder = bld->gallivm->builder;
-   LLVMValueRef indexes[2], data_ptr, mip_offset;
-
-   indexes[0] = lp_build_const_int32(bld->gallivm, 0);
-   indexes[1] = level;
-   mip_offset = LLVMBuildGEP(builder, bld->mip_offsets, indexes, 2, "");
-   mip_offset = LLVMBuildLoad(builder, mip_offset, "");
-   data_ptr = LLVMBuildGEP(builder, bld->base_ptr, &mip_offset, 1, "");
+   LLVMValueRef mip_offset = lp_sample_load_mip_value(bld->gallivm,
+                                                      bld->mip_offsets_type,
+                                                      bld->mip_offsets, level);
+   LLVMValueRef data_ptr =
+      LLVMBuildGEP2(builder,
+                    LLVMInt8TypeInContext(bld->gallivm->context),
+                    bld->base_ptr, &mip_offset, 1, "");
    return data_ptr;
 }
 
@@ -1188,13 +1208,11 @@ lp_build_get_mip_offsets(struct lp_build_sample_context *bld,
                          LLVMValueRef level)
 {
    LLVMBuilderRef builder = bld->gallivm->builder;
-   LLVMValueRef indexes[2], offsets, offset1;
+   LLVMValueRef offsets, offset1;
 
-   indexes[0] = lp_build_const_int32(bld->gallivm, 0);
    if (bld->num_mips == 1) {
-      indexes[1] = level;
-      offset1 = LLVMBuildGEP(builder, bld->mip_offsets, indexes, 2, "");
-      offset1 = LLVMBuildLoad(builder, offset1, "");
+      offset1 = lp_sample_load_mip_value(bld->gallivm, bld->mip_offsets_type,
+                                         bld->mip_offsets, level);
       offsets = lp_build_broadcast_scalar(&bld->int_coord_bld, offset1);
    }
    else if (bld->num_mips == bld->coord_bld.type.length / 4) {
@@ -1204,9 +1222,10 @@ lp_build_get_mip_offsets(struct lp_build_sample_context *bld,
       for (i = 0; i < bld->num_mips; i++) {
          LLVMValueRef indexi = lp_build_const_int32(bld->gallivm, i);
          LLVMValueRef indexo = lp_build_const_int32(bld->gallivm, 4 * i);
-         indexes[1] = LLVMBuildExtractElement(builder, level, indexi, "");
-         offset1 = LLVMBuildGEP(builder, bld->mip_offsets, indexes, 2, "");
-         offset1 = LLVMBuildLoad(builder, offset1, "");
+         offset1 = lp_sample_load_mip_value(bld->gallivm, bld->mip_offsets_type,
+                                            bld->mip_offsets,
+                                            LLVMBuildExtractElement(builder, level,
+                                                                    indexi, ""));
          offsets = LLVMBuildInsertElement(builder, offsets, offset1, indexo, "");
       }
       offsets = lp_build_swizzle_scalar_aos(&bld->int_coord_bld, offsets, 0, 4);
@@ -1219,9 +1238,10 @@ lp_build_get_mip_offsets(struct lp_build_sample_context *bld,
       offsets = bld->int_coord_bld.undef;
       for (i = 0; i < bld->num_mips; i++) {
          LLVMValueRef indexi = lp_build_const_int32(bld->gallivm, i);
-         indexes[1] = LLVMBuildExtractElement(builder, level, indexi, "");
-         offset1 = LLVMBuildGEP(builder, bld->mip_offsets, indexes, 2, "");
-         offset1 = LLVMBuildLoad(builder, offset1, "");
+         offset1 = lp_sample_load_mip_value(bld->gallivm, bld->mip_offsets_type,
+                                            bld->mip_offsets,
+                                            LLVMBuildExtractElement(builder, level,
+                                                                    indexi, ""));
          offsets = LLVMBuildInsertElement(builder, offsets, offset1, indexi, "");
       }
    }
@@ -1303,15 +1323,15 @@ lp_build_minify(struct lp_build_context *bld,
  */
 static LLVMValueRef
 lp_build_get_level_stride_vec(struct lp_build_sample_context *bld,
+                              LLVMTypeRef stride_type,
                               LLVMValueRef stride_array, LLVMValueRef level)
 {
    LLVMBuilderRef builder = bld->gallivm->builder;
-   LLVMValueRef indexes[2], stride, stride1;
-   indexes[0] = lp_build_const_int32(bld->gallivm, 0);
+   LLVMValueRef stride, stride1;
+
    if (bld->num_mips == 1) {
-      indexes[1] = level;
-      stride1 = LLVMBuildGEP(builder, stride_array, indexes, 2, "");
-      stride1 = LLVMBuildLoad(builder, stride1, "");
+      stride1 = lp_sample_load_mip_value(bld->gallivm, stride_type,
+                                         stride_array, level);
       stride = lp_build_broadcast_scalar(&bld->int_coord_bld, stride1);
    }
    else if (bld->num_mips == bld->coord_bld.type.length / 4) {
@@ -1322,9 +1342,10 @@ lp_build_get_level_stride_vec(struct lp_build_sample_context *bld,
       for (i = 0; i < bld->num_mips; i++) {
          LLVMValueRef indexi = lp_build_const_int32(bld->gallivm, i);
          LLVMValueRef indexo = lp_build_const_int32(bld->gallivm, 4 * i);
-         indexes[1] = LLVMBuildExtractElement(builder, level, indexi, "");
-         stride1 = LLVMBuildGEP(builder, stride_array, indexes, 2, "");
-         stride1 = LLVMBuildLoad(builder, stride1, "");
+         stride1 = lp_sample_load_mip_value(bld->gallivm, stride_type,
+                                            stride_array,
+                                            LLVMBuildExtractElement(builder, level,
+                                                                    indexi, ""));
          stride = LLVMBuildInsertElement(builder, stride, stride1, indexo, "");
       }
       stride = lp_build_swizzle_scalar_aos(&bld->int_coord_bld, stride, 0, 4);
@@ -1338,9 +1359,10 @@ lp_build_get_level_stride_vec(struct lp_build_sample_context *bld,
       stride = bld->int_coord_bld.undef;
       for (i = 0; i < bld->coord_bld.type.length; i++) {
          LLVMValueRef indexi = lp_build_const_int32(bld->gallivm, i);
-         indexes[1] = LLVMBuildExtractElement(builder, level, indexi, "");
-         stride1 = LLVMBuildGEP(builder, stride_array, indexes, 2, "");
-         stride1 = LLVMBuildLoad(builder, stride1, "");
+         stride1 = lp_sample_load_mip_value(bld->gallivm, stride_type,
+                                            stride_array,
+                                            LLVMBuildExtractElement(builder, level,
+                                                                    indexi, ""));
          stride = LLVMBuildInsertElement(builder, stride, stride1, indexi, "");
       }
    }
@@ -1459,11 +1481,13 @@ lp_build_mipmap_level_sizes(struct lp_build_sample_context *bld,
 
    if (dims >= 2) {
       *row_stride_vec = lp_build_get_level_stride_vec(bld,
+                                                      bld->row_stride_type,
                                                       bld->row_stride_array,
                                                       ilevel);
    }
    if (dims == 3 || has_layer_coord(bld->static_texture_state->target)) {
       *img_stride_vec = lp_build_get_level_stride_vec(bld,
+                                                      bld->img_stride_type,
                                                       bld->img_stride_array,
                                                       ilevel);
    }

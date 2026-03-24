@@ -103,18 +103,14 @@ lp_format_intrinsic(char *name,
 
 
 LLVMValueRef
-lp_declare_intrinsic(LLVMModuleRef module,
-                     const char *name,
-                     LLVMTypeRef ret_type,
-                     LLVMTypeRef *arg_types,
-                     unsigned num_args)
+lp_declare_intrinsic_with_type(LLVMModuleRef module,
+                               const char *name,
+                               LLVMTypeRef function_type)
 {
-   LLVMTypeRef function_type;
    LLVMValueRef function;
 
    assert(!LLVMGetNamedFunction(module, name));
 
-   function_type = LLVMFunctionType(ret_type, arg_types, num_args, 0);
    function = LLVMAddFunction(module, name, function_type);
 
    LLVMSetFunctionCallConv(function, LLVMCCallConv);
@@ -123,6 +119,19 @@ lp_declare_intrinsic(LLVMModuleRef module,
    assert(LLVMIsDeclaration(function));
 
    return function;
+}
+
+
+LLVMValueRef
+lp_declare_intrinsic(LLVMModuleRef module,
+                     const char *name,
+                     LLVMTypeRef ret_type,
+                     LLVMTypeRef *arg_types,
+                     unsigned num_args)
+{
+   LLVMTypeRef function_type =
+      LLVMFunctionType(ret_type, arg_types, num_args, 0);
+   return lp_declare_intrinsic_with_type(module, name, function_type);
 }
 
 
@@ -229,22 +238,21 @@ lp_build_intrinsic(LLVMBuilderRef builder,
 {
    LLVMModuleRef module = LLVMGetGlobalParent(LLVMGetBasicBlockParent(LLVMGetInsertBlock(builder)));
    LLVMValueRef function, call;
-   bool set_callsite_attrs = LLVM_VERSION_MAJOR >= 4 &&
-                             !(attr_mask & LP_FUNC_ATTR_LEGACY);
+   LLVMTypeRef function_type;
+   LLVMTypeRef arg_types[LP_MAX_FUNC_ARGS];
+
+   assert(num_args <= LP_MAX_FUNC_ARGS);
+
+   for (unsigned i = 0; i < num_args; ++i) {
+      assert(args[i]);
+      arg_types[i] = LLVMTypeOf(args[i]);
+   }
+
+   function_type = LLVMFunctionType(ret_type, arg_types, num_args, 0);
 
    function = LLVMGetNamedFunction(module, name);
-   if(!function) {
-      LLVMTypeRef arg_types[LP_MAX_FUNC_ARGS];
-      unsigned i;
-
-      assert(num_args <= LP_MAX_FUNC_ARGS);
-
-      for(i = 0; i < num_args; ++i) {
-         assert(args[i]);
-         arg_types[i] = LLVMTypeOf(args[i]);
-      }
-
-      function = lp_declare_intrinsic(module, name, ret_type, arg_types, num_args);
+   if (!function) {
+      function = lp_declare_intrinsic_with_type(module, name, function_type);
 
       /*
        * If llvm removes an intrinsic we use, we'll hit this abort (rather
@@ -253,21 +261,17 @@ lp_build_intrinsic(LLVMBuilderRef builder,
       if (LLVMGetIntrinsicID(function) == 0) {
          _debug_printf("llvm (version " MESA_LLVM_VERSION_STRING
                        ") found no intrinsic for %s, going to crash...\n",
-                name);
+                       name);
          abort();
       }
-
-      if (!set_callsite_attrs)
-         lp_add_func_attributes(function, attr_mask);
 
       if (gallivm_debug & GALLIVM_DEBUG_IR) {
          lp_debug_dump_value(function);
       }
    }
 
-   call = LLVMBuildCall(builder, function, args, num_args, "");
-   if (set_callsite_attrs)
-      lp_add_func_attributes(call, attr_mask);
+   call = LLVMBuildCall2(builder, function_type, function, args, num_args, "");
+   lp_add_func_attributes(call, attr_mask);
    return call;
 }
 
@@ -441,5 +445,4 @@ lp_build_intrinsic_map_binary(struct gallivm_state *gallivm,
 
    return lp_build_intrinsic_map(gallivm, name, ret_type, args, 2);
 }
-
 

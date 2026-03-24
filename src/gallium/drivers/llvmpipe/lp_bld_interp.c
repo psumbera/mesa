@@ -52,6 +52,13 @@
 static LLVMTypeRef
 sample_pos_array_type(LLVMValueRef sample_pos_array);
 
+static LLVMValueRef
+fetch_interp_coeff(struct lp_build_interp_soa_context *bld,
+                   struct gallivm_state *gallivm,
+                   LLVMValueRef base_ptr,
+                   unsigned attrib,
+                   unsigned chan);
+
 
 /*
  * The shader JIT function operates on blocks of quads.
@@ -195,34 +202,13 @@ calc_centroid_offsets(struct lp_build_interp_soa_context *bld,
 }
 
 
-/* Note: this assumes the pointer to elem_type is in address space 0 */
-static LLVMValueRef
-load_casted(LLVMBuilderRef builder, LLVMTypeRef elem_type,
-            LLVMValueRef ptr, const char *name)
-{
-   ptr = LLVMBuildBitCast(builder, ptr, LLVMPointerType(elem_type, 0), name);
-   return LLVMBuildLoad2(builder, elem_type, ptr, name);
-}
-
-static LLVMValueRef
-indexed_load(LLVMBuilderRef builder,
-             LLVMTypeRef gep_type,
-             LLVMTypeRef elem_type,
-             LLVMValueRef ptr,
-             LLVMValueRef index,
-             const char *name)
-{
-   ptr = LLVMBuildGEP2(builder, gep_type, ptr, &index, 1, name);
-   return load_casted(builder, elem_type, ptr, name);
-}
-
 static LLVMTypeRef
 sample_pos_array_type(LLVMValueRef sample_pos_array)
 {
    if (LLVMGetValueKind(sample_pos_array) == LLVMGlobalVariableValueKind)
       return LLVMGlobalGetValueType(sample_pos_array);
 
-   return LLVMGetElementType(LLVMTypeOf(sample_pos_array));
+   return lp_llvm_pointee_type(sample_pos_array);
 }
 
 /* Much easier, and significantly less instructions in the per-stamp
@@ -237,68 +223,10 @@ coeffs_init_simple(struct lp_build_interp_soa_context *bld,
                    LLVMValueRef dadx_ptr,
                    LLVMValueRef dady_ptr)
 {
-   struct lp_build_context *coeff_bld = &bld->coeff_bld;
-   struct lp_build_context *setup_bld = &bld->setup_bld;
-   struct gallivm_state *gallivm = coeff_bld->gallivm;
-   LLVMBuilderRef builder = gallivm->builder;
-   unsigned attrib;
-
-   for (attrib = 0; attrib < bld->num_attribs; ++attrib) {
-      /*
-       * always fetch all 4 values for performance/simplicity
-       * Note: we do that here because it seems to generate better
-       * code. It generates a lot of moves initially but less
-       * moves later. As far as I can tell this looks like a
-       * llvm issue, instead of simply reloading the values from
-       * the passed in pointers it if it runs out of registers
-       * it spills/reloads them. Maybe some optimization passes
-       * would help.
-       * Might want to investigate this again later.
-       */
-      const unsigned interp = bld->interp[attrib];
-      LLVMValueRef index = lp_build_const_int32(gallivm,
-                                attrib * TGSI_NUM_CHANNELS);
-      LLVMValueRef dadxaos = setup_bld->zero;
-      LLVMValueRef dadyaos = setup_bld->zero;
-      LLVMValueRef a0aos = setup_bld->zero;
-
-      switch (interp) {
-      case LP_INTERP_PERSPECTIVE:
-         FALLTHROUGH;
-
-      case LP_INTERP_LINEAR:
-         dadxaos = indexed_load(builder,
-                              LLVMFloatTypeInContext(gallivm->context),
-                              setup_bld->vec_type, dadx_ptr, index, "");
-
-         dadyaos = indexed_load(builder,
-                              LLVMFloatTypeInContext(gallivm->context),
-                              setup_bld->vec_type, dady_ptr, index, "");
-
-         attrib_name(dadxaos, attrib, 0, ".dadxaos");
-         attrib_name(dadyaos, attrib, 0, ".dadyaos");
-         FALLTHROUGH;
-
-      case LP_INTERP_CONSTANT:
-      case LP_INTERP_FACING:
-         a0aos = indexed_load(builder,
-                           LLVMFloatTypeInContext(gallivm->context),
-                           setup_bld->vec_type, a0_ptr, index, "");
-         attrib_name(a0aos, attrib, 0, ".a0aos");
-         break;
-
-      case LP_INTERP_POSITION:
-         /* Nothing to do as the position coeffs are already setup in slot 0 */
-         continue;
-
-      default:
-         assert(0);
-         break;
-      }
-      bld->a0aos[attrib] = a0aos;
-      bld->dadxaos[attrib] = dadxaos;
-      bld->dadyaos[attrib] = dadyaos;
-   }
+   (void)bld;
+   (void)a0_ptr;
+   (void)dadx_ptr;
+   (void)dady_ptr;
 }
 
 /**
@@ -316,7 +244,6 @@ attribs_update_simple(struct lp_build_interp_soa_context *bld,
 {
    LLVMBuilderRef builder = gallivm->builder;
    struct lp_build_context *coeff_bld = &bld->coeff_bld;
-   struct lp_build_context *setup_bld = &bld->setup_bld;
    LLVMValueRef oow = NULL;
    unsigned attrib;
    LLVMValueRef pixoffx;
@@ -344,13 +271,10 @@ attribs_update_simple(struct lp_build_interp_soa_context *bld,
 
       for (chan = 0; chan < TGSI_NUM_CHANNELS; chan++) {
          if (mask & (1 << chan)) {
-            LLVMValueRef index;
             LLVMValueRef dadx = coeff_bld->zero;
             LLVMValueRef dady = coeff_bld->zero;
             LLVMValueRef a = coeff_bld->zero;
             LLVMValueRef chan_pixoffx = pixoffx, chan_pixoffy = pixoffy;
-
-            index = lp_build_const_int32(gallivm, chan);
             switch (interp) {
             case LP_INTERP_PERSPECTIVE:
                FALLTHROUGH;
@@ -378,15 +302,12 @@ attribs_update_simple(struct lp_build_interp_soa_context *bld,
                   }
                }
                else {
-                  dadx = lp_build_extract_broadcast(gallivm, setup_bld->type,
-                                                    coeff_bld->type, bld->dadxaos[attrib],
-                                                    index);
-                  dady = lp_build_extract_broadcast(gallivm, setup_bld->type,
-                                                    coeff_bld->type, bld->dadyaos[attrib],
-                                                    index);
-                  a = lp_build_extract_broadcast(gallivm, setup_bld->type,
-                                                 coeff_bld->type, bld->a0aos[attrib],
-                                                 index);
+                  dadx = fetch_interp_coeff(bld, gallivm, bld->dadx_ptr,
+                                            attrib, chan);
+                  dady = fetch_interp_coeff(bld, gallivm, bld->dady_ptr,
+                                            attrib, chan);
+                  a = fetch_interp_coeff(bld, gallivm, bld->a0_ptr,
+                                         attrib, chan);
 
                   if (bld->coverage_samples > 1) {
                      LLVMValueRef xoffset = pix_center_offset;
@@ -427,9 +348,8 @@ attribs_update_simple(struct lp_build_interp_soa_context *bld,
 
             case LP_INTERP_CONSTANT:
             case LP_INTERP_FACING:
-               a = lp_build_extract_broadcast(gallivm, setup_bld->type,
-                                              coeff_bld->type, bld->a0aos[attrib],
-                                              index);
+               a = fetch_interp_coeff(bld, gallivm, bld->a0_ptr,
+                                      attrib, chan);
                break;
 
             case LP_INTERP_POSITION:
@@ -444,10 +364,8 @@ attribs_update_simple(struct lp_build_interp_soa_context *bld,
 
             if ((attrib == 0) && (chan == 2)) {
                /* add polygon-offset value, stored in the X component of a0 */
-               LLVMValueRef offset =
-                  lp_build_extract_broadcast(gallivm, setup_bld->type,
-                                             coeff_bld->type, bld->a0aos[0],
-                                             lp_build_const_int32(gallivm, 0));
+               LLVMValueRef offset = fetch_interp_coeff(bld, gallivm,
+                                                        bld->a0_ptr, 0, 0);
                a = LLVMBuildFAdd(builder, a, offset, "");
 
                if (!bld->depth_clamp){
@@ -483,7 +401,6 @@ lp_build_interp_soa_indirect(struct lp_build_interp_soa_context *bld,
    LLVMValueRef a = coeff_bld->zero;
 
    LLVMTypeRef u8ptr = LLVMPointerType(LLVMInt8TypeInContext(gallivm->context), 0);
-
    indir_index = LLVMBuildAdd(builder, indir_index, lp_build_const_int_vec(gallivm, coeff_bld->type, attrib), "");
    LLVMValueRef index = LLVMBuildMul(builder, indir_index, lp_build_const_int_vec(gallivm, coeff_bld->type, 4), "");
    index = LLVMBuildAdd(builder, index, lp_build_const_int_vec(gallivm, coeff_bld->type, chan), "");
@@ -550,7 +467,6 @@ lp_build_interp_soa(struct lp_build_interp_soa_context *bld,
 {
    LLVMBuilderRef builder = gallivm->builder;
    struct lp_build_context *coeff_bld = &bld->coeff_bld;
-   struct lp_build_context *setup_bld = &bld->setup_bld;
    LLVMValueRef pixoffx;
    LLVMValueRef pixoffy;
 
@@ -633,23 +549,13 @@ lp_build_interp_soa(struct lp_build_interp_soa_context *bld,
    LLVMValueRef dady = coeff_bld->zero;
    LLVMValueRef a = coeff_bld->zero;
 
-   LLVMValueRef index = lp_build_const_int32(gallivm, chan);
-
    switch (interp) {
    case LP_INTERP_PERSPECTIVE:
       FALLTHROUGH;
    case LP_INTERP_LINEAR:
-      dadx = lp_build_extract_broadcast(gallivm, setup_bld->type,
-                                        coeff_bld->type, bld->dadxaos[attrib],
-                                        index);
-
-      dady = lp_build_extract_broadcast(gallivm, setup_bld->type,
-                                        coeff_bld->type, bld->dadyaos[attrib],
-                                        index);
-
-      a = lp_build_extract_broadcast(gallivm, setup_bld->type,
-                                     coeff_bld->type, bld->a0aos[attrib],
-                                     index);
+      dadx = fetch_interp_coeff(bld, gallivm, bld->dadx_ptr, attrib, chan);
+      dady = fetch_interp_coeff(bld, gallivm, bld->dady_ptr, attrib, chan);
+      a = fetch_interp_coeff(bld, gallivm, bld->a0_ptr, attrib, chan);
 
       /*
        * a = a0 + (x * dadx + y * dady)
@@ -668,15 +574,37 @@ lp_build_interp_soa(struct lp_build_interp_soa_context *bld,
       break;
    case LP_INTERP_CONSTANT:
    case LP_INTERP_FACING:
-      a = lp_build_extract_broadcast(gallivm, setup_bld->type,
-                                     coeff_bld->type, bld->a0aos[attrib],
-                                     index);
+      a = fetch_interp_coeff(bld, gallivm, bld->a0_ptr, attrib, chan);
       break;
    default:
       assert(0);
       break;
    }
    return a;
+}
+
+static LLVMValueRef
+fetch_interp_coeff(struct lp_build_interp_soa_context *bld,
+                   struct gallivm_state *gallivm,
+                   LLVMValueRef base_ptr,
+                   unsigned attrib,
+                   unsigned chan)
+{
+   LLVMBuilderRef builder = gallivm->builder;
+   struct lp_build_context *coeff_bld = &bld->coeff_bld;
+   struct lp_type dst_type = coeff_bld->type;
+   LLVMTypeRef u8ptr = LLVMPointerType(LLVMInt8TypeInContext(gallivm->context), 0);
+   LLVMValueRef index;
+
+   dst_type.length = 1;
+   index = lp_build_const_int_vec(gallivm, coeff_bld->type,
+                                  ((attrib * TGSI_NUM_CHANNELS) + chan) *
+                                  sizeof(float));
+
+   return lp_build_gather(gallivm, coeff_bld->type.length,
+                          coeff_bld->type.width, dst_type, true,
+                          LLVMBuildBitCast(builder, base_ptr, u8ptr, ""),
+                          index, false);
 }
 
 /**
@@ -796,21 +724,24 @@ lp_build_interp_soa_init(struct lp_build_interp_soa_context *bld,
       unsigned num_loops = 16 / type.length;
       LLVMValueRef pixoffx, pixoffy, index;
       LLVMValueRef ptr;
+      LLVMTypeRef store_elem_type = lp_build_vec_type(gallivm, type);
 
       bld->xoffset_store = lp_build_array_alloca(gallivm,
-                                                 lp_build_vec_type(gallivm, type),
+                                                 store_elem_type,
                                                  lp_build_const_int32(gallivm, num_loops),
                                                  "");
       bld->yoffset_store = lp_build_array_alloca(gallivm,
-                                                 lp_build_vec_type(gallivm, type),
+                                                 store_elem_type,
                                                  lp_build_const_int32(gallivm, num_loops),
                                                  "");
       for (i = 0; i < num_loops; i++) {
          index = lp_build_const_int32(gallivm, i);
          calc_offsets(&bld->coeff_bld, i*type.length/4, &pixoffx, &pixoffy);
-         ptr = LLVMBuildGEP(builder, bld->xoffset_store, &index, 1, "");
+         ptr = LLVMBuildGEP2(builder, store_elem_type,
+                             bld->xoffset_store, &index, 1, "");
          LLVMBuildStore(builder, pixoffx, ptr);
-         ptr = LLVMBuildGEP(builder, bld->yoffset_store, &index, 1, "");
+         ptr = LLVMBuildGEP2(builder, store_elem_type,
+                             bld->yoffset_store, &index, 1, "");
          LLVMBuildStore(builder, pixoffy, ptr);
       }
    }
@@ -840,4 +771,3 @@ lp_build_interp_soa_update_pos_dyn(struct lp_build_interp_soa_context *bld,
 {
    attribs_update_simple(bld, gallivm, quad_start_index, NULL, sample_id, 0, 1);
 }
-

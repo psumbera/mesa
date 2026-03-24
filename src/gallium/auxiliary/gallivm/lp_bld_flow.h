@@ -73,7 +73,8 @@ struct lp_build_mask_context
    struct lp_build_skip_context skip;
 
    LLVMTypeRef reg_type;
-
+   LLVMTypeRef var_type;
+   /* 'var' is a pointer (alloca) pointing to 'var_type' */
    LLVMValueRef var;
 };
 

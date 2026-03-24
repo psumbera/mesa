@@ -65,6 +65,9 @@ struct llvmpipe_sampler_dynamic_state
    struct lp_sampler_dynamic_state base;
 
    const struct lp_sampler_static_state *static_state;
+   LLVMTypeRef jit_context_type;
+   unsigned textures_idx;
+   unsigned samplers_idx;
 };
 
 
@@ -84,7 +87,31 @@ struct llvmpipe_image_dynamic_state
    struct lp_sampler_dynamic_state base;
 
    const struct lp_image_static_state *static_state;
+   LLVMTypeRef jit_context_type;
+   unsigned images_idx;
 };
+
+static LLVMValueRef
+lp_llvm_dynamic_unit_index(struct gallivm_state *gallivm,
+                           unsigned unit,
+                           LLVMValueRef unit_offset,
+                           unsigned max_units)
+{
+   LLVMBuilderRef builder = gallivm->builder;
+   LLVMValueRef unit_index = lp_build_const_int32(gallivm, unit);
+
+   if (unit_offset) {
+      LLVMValueRef cond;
+
+      unit_index = LLVMBuildAdd(builder, unit_index, unit_offset, "");
+      cond = LLVMBuildICmp(builder, LLVMIntULT, unit_index,
+                           lp_build_const_int32(gallivm, max_units), "");
+      unit_index = LLVMBuildSelect(builder, cond, unit_index,
+                                   lp_build_const_int32(gallivm, unit), "");
+   }
+
+   return unit_index;
+}
 
 /**
  * This is the bridge between our sampler and the TGSI translator.
@@ -112,37 +139,43 @@ lp_llvm_texture_member(const struct lp_sampler_dynamic_state *base,
                        LLVMValueRef context_ptr,
                        unsigned texture_unit,
                        LLVMValueRef texture_unit_offset,
+                       LLVMTypeRef *out_type,
                        unsigned member_index,
                        const char *member_name,
                        boolean emit_load)
 {
-   LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef indices[4];
-   LLVMValueRef ptr;
+   const struct llvmpipe_sampler_dynamic_state *state =
+      (const struct llvmpipe_sampler_dynamic_state *)base;
+   LLVMTypeRef textures_type;
+   LLVMTypeRef texture_type;
+   LLVMValueRef textures_ptr;
+   LLVMValueRef texture_ptr;
+   LLVMValueRef unit_index;
    LLVMValueRef res;
 
    assert(texture_unit < PIPE_MAX_SHADER_SAMPLER_VIEWS);
 
-   /* context[0] */
-   indices[0] = lp_build_const_int32(gallivm, 0);
-   /* context[0].textures */
-   indices[1] = lp_build_const_int32(gallivm, LP_JIT_CTX_TEXTURES);
-   /* context[0].textures[unit] */
-   indices[2] = lp_build_const_int32(gallivm, texture_unit);
-   if (texture_unit_offset) {
-      indices[2] = LLVMBuildAdd(gallivm->builder, indices[2], texture_unit_offset, "");
-      LLVMValueRef cond = LLVMBuildICmp(gallivm->builder, LLVMIntULT, indices[2], lp_build_const_int32(gallivm, PIPE_MAX_SHADER_SAMPLER_VIEWS), "");
-      indices[2] = LLVMBuildSelect(gallivm->builder, cond, indices[2], lp_build_const_int32(gallivm, texture_unit), "");
-   }
-   /* context[0].textures[unit].member */
-   indices[3] = lp_build_const_int32(gallivm, member_index);
+   textures_type = LLVMStructGetTypeAtIndex(state->jit_context_type,
+                                            state->textures_idx);
+   texture_type = LLVMGetElementType(textures_type);
+   textures_ptr = lp_build_struct_get_ptr2(gallivm, state->jit_context_type,
+                                           context_ptr, state->textures_idx,
+                                           "textures");
+   unit_index = lp_llvm_dynamic_unit_index(gallivm, texture_unit,
+                                           texture_unit_offset,
+                                           PIPE_MAX_SHADER_SAMPLER_VIEWS);
+   texture_ptr = lp_build_array_get_ptr2(gallivm, textures_type,
+                                         textures_ptr, unit_index);
 
-   ptr = LLVMBuildGEP(builder, context_ptr, indices, ARRAY_SIZE(indices), "");
+   if (out_type)
+      *out_type = LLVMStructGetTypeAtIndex(texture_type, member_index);
 
    if (emit_load)
-      res = LLVMBuildLoad(builder, ptr, "");
+      res = lp_build_struct_get2(gallivm, texture_type, texture_ptr,
+                                 member_index, member_name);
    else
-      res = ptr;
+      res = lp_build_struct_get_ptr2(gallivm, texture_type, texture_ptr,
+                                     member_index, member_name);
 
    lp_build_name(res, "context.texture%u.%s", texture_unit, member_name);
 
@@ -168,7 +201,7 @@ lp_llvm_texture_member(const struct lp_sampler_dynamic_state *base,
                             LLVMValueRef texture_unit_offset) \
    { \
       return lp_llvm_texture_member(base, gallivm, context_ptr, \
-                                    texture_unit, texture_unit_offset,  \
+                                    texture_unit, texture_unit_offset, NULL, \
                                     _index, #_name, _emit_load );       \
    }
 
@@ -179,11 +212,50 @@ LP_LLVM_TEXTURE_MEMBER(depth,      LP_JIT_TEXTURE_DEPTH, TRUE)
 LP_LLVM_TEXTURE_MEMBER(first_level, LP_JIT_TEXTURE_FIRST_LEVEL, TRUE)
 LP_LLVM_TEXTURE_MEMBER(last_level, LP_JIT_TEXTURE_LAST_LEVEL, TRUE)
 LP_LLVM_TEXTURE_MEMBER(base_ptr,   LP_JIT_TEXTURE_BASE, TRUE)
-LP_LLVM_TEXTURE_MEMBER(row_stride, LP_JIT_TEXTURE_ROW_STRIDE, FALSE)
-LP_LLVM_TEXTURE_MEMBER(img_stride, LP_JIT_TEXTURE_IMG_STRIDE, FALSE)
-LP_LLVM_TEXTURE_MEMBER(mip_offsets, LP_JIT_TEXTURE_MIP_OFFSETS, FALSE)
 LP_LLVM_TEXTURE_MEMBER(num_samples, LP_JIT_TEXTURE_NUM_SAMPLES, TRUE)
 LP_LLVM_TEXTURE_MEMBER(sample_stride, LP_JIT_TEXTURE_SAMPLE_STRIDE, TRUE)
+
+static LLVMValueRef
+lp_llvm_texture_row_stride(const struct lp_sampler_dynamic_state *base,
+                           struct gallivm_state *gallivm,
+                           LLVMValueRef context_ptr,
+                           unsigned texture_unit,
+                           LLVMValueRef texture_unit_offset,
+                           LLVMTypeRef *out_type)
+{
+   return lp_llvm_texture_member(base, gallivm, context_ptr,
+                                 texture_unit, texture_unit_offset, out_type,
+                                 LP_JIT_TEXTURE_ROW_STRIDE, "row_stride",
+                                 FALSE);
+}
+
+static LLVMValueRef
+lp_llvm_texture_img_stride(const struct lp_sampler_dynamic_state *base,
+                           struct gallivm_state *gallivm,
+                           LLVMValueRef context_ptr,
+                           unsigned texture_unit,
+                           LLVMValueRef texture_unit_offset,
+                           LLVMTypeRef *out_type)
+{
+   return lp_llvm_texture_member(base, gallivm, context_ptr,
+                                 texture_unit, texture_unit_offset, out_type,
+                                 LP_JIT_TEXTURE_IMG_STRIDE, "img_stride",
+                                 FALSE);
+}
+
+static LLVMValueRef
+lp_llvm_texture_mip_offsets(const struct lp_sampler_dynamic_state *base,
+                            struct gallivm_state *gallivm,
+                            LLVMValueRef context_ptr,
+                            unsigned texture_unit,
+                            LLVMValueRef texture_unit_offset,
+                            LLVMTypeRef *out_type)
+{
+   return lp_llvm_texture_member(base, gallivm, context_ptr,
+                                 texture_unit, texture_unit_offset, out_type,
+                                 LP_JIT_TEXTURE_MIP_OFFSETS, "mip_offsets",
+                                 FALSE);
+}
 
 
 /**
@@ -203,28 +275,33 @@ lp_llvm_sampler_member(const struct lp_sampler_dynamic_state *base,
                        const char *member_name,
                        boolean emit_load)
 {
-   LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef indices[4];
-   LLVMValueRef ptr;
+   const struct llvmpipe_sampler_dynamic_state *state =
+      (const struct llvmpipe_sampler_dynamic_state *)base;
+   LLVMTypeRef samplers_type;
+   LLVMTypeRef sampler_type;
+   LLVMValueRef samplers_ptr;
+   LLVMValueRef sampler_ptr;
    LLVMValueRef res;
 
    assert(sampler_unit < PIPE_MAX_SAMPLERS);
 
-   /* context[0] */
-   indices[0] = lp_build_const_int32(gallivm, 0);
-   /* context[0].samplers */
-   indices[1] = lp_build_const_int32(gallivm, LP_JIT_CTX_SAMPLERS);
-   /* context[0].samplers[unit] */
-   indices[2] = lp_build_const_int32(gallivm, sampler_unit);
-   /* context[0].samplers[unit].member */
-   indices[3] = lp_build_const_int32(gallivm, member_index);
-
-   ptr = LLVMBuildGEP(builder, context_ptr, indices, ARRAY_SIZE(indices), "");
+   samplers_type = LLVMStructGetTypeAtIndex(state->jit_context_type,
+                                            state->samplers_idx);
+   sampler_type = LLVMGetElementType(samplers_type);
+   samplers_ptr = lp_build_struct_get_ptr2(gallivm, state->jit_context_type,
+                                           context_ptr, state->samplers_idx,
+                                           "samplers");
+   sampler_ptr = lp_build_array_get_ptr2(gallivm, samplers_type,
+                                         samplers_ptr,
+                                         lp_build_const_int32(gallivm,
+                                                              sampler_unit));
 
    if (emit_load)
-      res = LLVMBuildLoad(builder, ptr, "");
+      res = lp_build_struct_get2(gallivm, sampler_type, sampler_ptr,
+                                 member_index, member_name);
    else
-      res = ptr;
+      res = lp_build_struct_get_ptr2(gallivm, sampler_type, sampler_ptr,
+                                     member_index, member_name);
 
    lp_build_name(res, "context.sampler%u.%s", sampler_unit, member_name);
 
@@ -265,37 +342,43 @@ lp_llvm_image_member(const struct lp_sampler_dynamic_state *base,
                      LLVMValueRef context_ptr,
                      unsigned image_unit,
                      LLVMValueRef image_unit_offset,
+                     LLVMTypeRef *out_type,
                      unsigned member_index,
                      const char *member_name,
                      boolean emit_load)
 {
-   LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef indices[4];
-   LLVMValueRef ptr;
+   const struct llvmpipe_image_dynamic_state *state =
+      (const struct llvmpipe_image_dynamic_state *)base;
+   LLVMTypeRef images_type;
+   LLVMTypeRef image_type;
+   LLVMValueRef images_ptr;
+   LLVMValueRef image_ptr;
+   LLVMValueRef unit_index;
    LLVMValueRef res;
 
    assert(image_unit < PIPE_MAX_SHADER_IMAGES);
 
-   /* context[0] */
-   indices[0] = lp_build_const_int32(gallivm, 0);
-   /* context[0].images */
-   indices[1] = lp_build_const_int32(gallivm, LP_JIT_CTX_IMAGES);
-   /* context[0].images[unit] */
-   indices[2] = lp_build_const_int32(gallivm, image_unit);
-   if (image_unit_offset) {
-      indices[2] = LLVMBuildAdd(gallivm->builder, indices[2], image_unit_offset, "");
-      LLVMValueRef cond = LLVMBuildICmp(gallivm->builder, LLVMIntULT, indices[2], lp_build_const_int32(gallivm, PIPE_MAX_SHADER_IMAGES), "");
-      indices[2] = LLVMBuildSelect(gallivm->builder, cond, indices[2], lp_build_const_int32(gallivm, image_unit), "");
-   }
-   /* context[0].images[unit].member */
-   indices[3] = lp_build_const_int32(gallivm, member_index);
+   images_type = LLVMStructGetTypeAtIndex(state->jit_context_type,
+                                          state->images_idx);
+   image_type = LLVMGetElementType(images_type);
+   images_ptr = lp_build_struct_get_ptr2(gallivm, state->jit_context_type,
+                                         context_ptr, state->images_idx,
+                                         "images");
+   unit_index = lp_llvm_dynamic_unit_index(gallivm, image_unit,
+                                           image_unit_offset,
+                                           PIPE_MAX_SHADER_IMAGES);
+   image_ptr = lp_build_array_get_ptr2(gallivm, images_type,
+                                       images_ptr, unit_index);
 
-   ptr = LLVMBuildGEP(builder, context_ptr, indices, ARRAY_SIZE(indices), "");
+   if (out_type)
+      *out_type = LLVMStructGetTypeAtIndex(image_type, member_index);
 
    if (emit_load)
-      res = LLVMBuildLoad(builder, ptr, "");
+      res = lp_build_struct_get2(gallivm, image_type, image_ptr,
+                                 member_index, member_name);
    else
-      res = ptr;
+      res = lp_build_struct_get_ptr2(gallivm, image_type, image_ptr,
+                                     member_index, member_name);
 
    lp_build_name(res, "context.image%u.%s", image_unit, member_name);
 
@@ -320,7 +403,7 @@ lp_llvm_image_member(const struct lp_sampler_dynamic_state *base,
                           unsigned image_unit, LLVMValueRef image_unit_offset) \
    { \
       return lp_llvm_image_member(base, gallivm, context_ptr, \
-                                  image_unit, image_unit_offset, \
+                                  image_unit, image_unit_offset, NULL, \
                                   _index, #_name, _emit_load );  \
    }
 
@@ -329,10 +412,34 @@ LP_LLVM_IMAGE_MEMBER(width,      LP_JIT_IMAGE_WIDTH, TRUE)
 LP_LLVM_IMAGE_MEMBER(height,     LP_JIT_IMAGE_HEIGHT, TRUE)
 LP_LLVM_IMAGE_MEMBER(depth,      LP_JIT_IMAGE_DEPTH, TRUE)
 LP_LLVM_IMAGE_MEMBER(base_ptr,   LP_JIT_IMAGE_BASE, TRUE)
-LP_LLVM_IMAGE_MEMBER(row_stride, LP_JIT_IMAGE_ROW_STRIDE, TRUE)
-LP_LLVM_IMAGE_MEMBER(img_stride, LP_JIT_IMAGE_IMG_STRIDE, TRUE)
 LP_LLVM_IMAGE_MEMBER(num_samples, LP_JIT_IMAGE_NUM_SAMPLES, TRUE)
 LP_LLVM_IMAGE_MEMBER(sample_stride, LP_JIT_IMAGE_SAMPLE_STRIDE, TRUE)
+
+static LLVMValueRef
+lp_llvm_image_row_stride(const struct lp_sampler_dynamic_state *base,
+                         struct gallivm_state *gallivm,
+                         LLVMValueRef context_ptr,
+                         unsigned image_unit,
+                         LLVMValueRef image_unit_offset,
+                         LLVMTypeRef *out_type)
+{
+   return lp_llvm_image_member(base, gallivm, context_ptr,
+                               image_unit, image_unit_offset, out_type,
+                               LP_JIT_IMAGE_ROW_STRIDE, "row_stride", TRUE);
+}
+
+static LLVMValueRef
+lp_llvm_image_img_stride(const struct lp_sampler_dynamic_state *base,
+                         struct gallivm_state *gallivm,
+                         LLVMValueRef context_ptr,
+                         unsigned image_unit,
+                         LLVMValueRef image_unit_offset,
+                         LLVMTypeRef *out_type)
+{
+   return lp_llvm_image_member(base, gallivm, context_ptr,
+                               image_unit, image_unit_offset, out_type,
+                               LP_JIT_IMAGE_IMG_STRIDE, "img_stride", TRUE);
+}
 
 #if LP_USE_TEXTURE_CACHE
 static LLVMValueRef
@@ -421,7 +528,10 @@ lp_llvm_sampler_soa_emit_size_query(const struct lp_build_sampler_soa *base,
 
 struct lp_build_sampler_soa *
 lp_llvm_sampler_soa_create(const struct lp_sampler_static_state *static_state,
-                           unsigned nr_samplers)
+                           unsigned nr_samplers,
+                           LLVMTypeRef jit_context_type,
+                           unsigned textures_idx,
+                           unsigned samplers_idx)
 {
    struct lp_llvm_sampler_soa *sampler;
 
@@ -454,6 +564,9 @@ lp_llvm_sampler_soa_create(const struct lp_sampler_static_state *static_state,
 #endif
 
    sampler->dynamic_state.static_state = static_state;
+   sampler->dynamic_state.jit_context_type = jit_context_type;
+   sampler->dynamic_state.textures_idx = textures_idx;
+   sampler->dynamic_state.samplers_idx = samplers_idx;
 
    sampler->nr_samplers = nr_samplers;
    return &sampler->base;
@@ -516,7 +629,9 @@ lp_llvm_image_soa_emit_size_query(const struct lp_build_image_soa *base,
 
 struct lp_build_image_soa *
 lp_llvm_image_soa_create(const struct lp_image_static_state *static_state,
-                         unsigned nr_images)
+                         unsigned nr_images,
+                         LLVMTypeRef jit_context_type,
+                         unsigned images_idx)
 {
    struct lp_llvm_image_soa *image;
 
@@ -539,6 +654,8 @@ lp_llvm_image_soa_create(const struct lp_image_static_state *static_state,
    image->dynamic_state.base.sample_stride = lp_llvm_image_sample_stride;
 
    image->dynamic_state.static_state = static_state;
+   image->dynamic_state.jit_context_type = jit_context_type;
+   image->dynamic_state.images_idx = images_idx;
 
    image->nr_images = nr_images;
    return &image->base;

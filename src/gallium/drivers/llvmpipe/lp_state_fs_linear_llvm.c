@@ -110,8 +110,8 @@ emit_fetch_texel_linear(const struct lp_build_sampler_aos *base,
    /* Pointer to a row of texels */
    texels_ptr = sampler->texels_ptrs[sampler->instance];
 
-   texel = lp_build_pointer_get(bld->gallivm->builder, texels_ptr,
-                                sampler->counter);
+   texel = lp_build_pointer_get2(bld->gallivm->builder, bld->vec_type,
+                                 texels_ptr, sampler->counter);
    assert(LLVMTypeOf(texel) == bld->vec_type);
 
    /*
@@ -167,7 +167,8 @@ llvm_fragment_body(struct lp_build_context *bld,
 
       inputs_ptr = inputs_ptrs[i];
 
-      input = lp_build_pointer_get(builder, inputs_ptr, sampler->counter);
+      input = lp_build_pointer_get2(builder, bld->vec_type,
+                                    inputs_ptr, sampler->counter);
       assert(LLVMTypeOf(input) == bld->vec_type);
 
       inputs[i] = input;
@@ -204,7 +205,7 @@ llvm_fragment_body(struct lp_build_context *bld,
       if (!outputs[i])
          continue;
 
-      output = LLVMBuildLoad(builder, outputs[i], "");
+      output = LLVMBuildLoad2(builder, bld->vec_type, outputs[i], "");
       lp_build_name(output, "output%u", i);
 
       cbuf = shader->info.base.output_semantic_index[i];
@@ -285,6 +286,13 @@ llvmpipe_fs_variant_linear_llvm(struct llvmpipe_context *lp,
    LLVMTypeRef int32t = LLVMInt32TypeInContext(gallivm->context);
    LLVMTypeRef pint8t = LLVMPointerType(int8t, 0);
    LLVMTypeRef pixelt = LLVMVectorType(int32t, 4);
+   LLVMTypeRef linear_context_type = variant->jit_linear_context_type;
+   LLVMTypeRef tex_array_type =
+      LLVMStructGetTypeAtIndex(linear_context_type, LP_JIT_LINEAR_CTX_TEX);
+   LLVMTypeRef inputs_array_type =
+      LLVMStructGetTypeAtIndex(linear_context_type, LP_JIT_LINEAR_CTX_INPUTS);
+   LLVMTypeRef linear_elem_ptr_type = LLVMGetElementType(tex_array_type);
+   LLVMTypeRef linear_elem_type = LLVMGetElementType(linear_elem_ptr_type);
 
    unsigned attrib;
    unsigned i;
@@ -355,21 +363,30 @@ llvmpipe_fs_variant_linear_llvm(struct llvmpipe_context *lp,
     * Get context data
     */
 
-   consts_ptr = lp_jit_linear_context_constants(gallivm, context_ptr);
-   interpolators_ptr = lp_jit_linear_context_inputs(gallivm, context_ptr);
-   samplers_ptr = lp_jit_linear_context_tex(gallivm, context_ptr);
+   consts_ptr = lp_build_struct_get2(gallivm, linear_context_type, context_ptr,
+                                     LP_JIT_LINEAR_CTX_CONSTANTS, "constants");
+   interpolators_ptr = lp_build_struct_get_ptr2(gallivm, linear_context_type,
+                                                context_ptr,
+                                                LP_JIT_LINEAR_CTX_INPUTS,
+                                                "inputs");
+   samplers_ptr = lp_build_struct_get_ptr2(gallivm, linear_context_type,
+                                           context_ptr,
+                                           LP_JIT_LINEAR_CTX_TEX,
+                                           "tex");
 
-   color0_ptr = lp_jit_linear_context_color0(gallivm, context_ptr);
-   color0_ptr = LLVMBuildLoad(builder, color0_ptr, "");
+   color0_ptr = lp_build_struct_get2(gallivm, linear_context_type, context_ptr,
+                                     LP_JIT_LINEAR_CTX_COLOR0, "color0");
    color0_ptr = LLVMBuildBitCast(builder, color0_ptr, LLVMPointerType(bld.vec_type, 0), "");
 
-   blend_color = lp_jit_linear_context_blend_color(gallivm, context_ptr);
-   blend_color = LLVMBuildLoad(builder, blend_color, "");
+   blend_color = lp_build_struct_get2(gallivm, linear_context_type, context_ptr,
+                                      LP_JIT_LINEAR_CTX_BLEND_COLOR,
+                                      "blend_color");
    blend_color = lp_build_broadcast(gallivm, LLVMVectorType(int32t, 4), blend_color);
    blend_color = LLVMBuildBitCast(builder, blend_color, LLVMVectorType(int8t, 16), "");
 
-   alpha_ref = lp_jit_linear_context_alpha_ref(gallivm, context_ptr);
-   alpha_ref = LLVMBuildLoad(builder, alpha_ref, "");
+   alpha_ref = lp_build_struct_get2(gallivm, linear_context_type, context_ptr,
+                                    LP_JIT_LINEAR_CTX_ALPHA_REF,
+                                    "alpha_ref_value");
 
    /*
     * Invoke the input interpolators
@@ -388,11 +405,12 @@ llvmpipe_fs_variant_linear_llvm(struct llvmpipe_context *lp,
 
       index = LLVMConstInt(int32t, attrib, 0);
 
-      elem = lp_build_array_get(bld.gallivm, interpolators_ptr, index);
+      elem = lp_build_array_get2(bld.gallivm, inputs_array_type,
+                                 interpolators_ptr, index);
       assert(LLVMGetTypeKind(LLVMTypeOf(elem)) == LLVMPointerTypeKind);
 
-      fetch_ptr = lp_build_pointer_get(builder, elem,
-                                       LLVMConstInt(int32t, 0, 0));
+      fetch_ptr = lp_build_pointer_get2(builder, linear_elem_type,
+                                        elem, LLVMConstInt(int32t, 0, 0));
       assert(LLVMGetTypeKind(LLVMTypeOf(fetch_ptr)) == LLVMPointerTypeKind);
 
       /* Pointer to a row of interpolated inputs */
@@ -429,10 +447,12 @@ llvmpipe_fs_variant_linear_llvm(struct llvmpipe_context *lp,
 
       index = LLVMConstInt(int32t, attrib, 0);
 
-      elem = lp_build_array_get(bld.gallivm, samplers_ptr, index);
+      elem = lp_build_array_get2(bld.gallivm, tex_array_type,
+                                 samplers_ptr, index);
       assert(LLVMGetTypeKind(LLVMTypeOf(elem)) == LLVMPointerTypeKind);
 
-      fetch_ptr = lp_build_pointer_get(builder, elem, LLVMConstInt(int32t, 0, 0));
+      fetch_ptr = lp_build_pointer_get2(builder, linear_elem_type,
+                                        elem, LLVMConstInt(int32t, 0, 0));
       assert(LLVMGetTypeKind(LLVMTypeOf(fetch_ptr)) == LLVMPointerTypeKind);
 
       /* Pointer to a row of texels */
@@ -459,13 +479,15 @@ llvmpipe_fs_variant_linear_llvm(struct llvmpipe_context *lp,
       sampler.counter = loop.counter;
 
       /* Read 4 pixels */
-      value = lp_build_pointer_get_unaligned(builder, color0_ptr, loop.counter, 4);
+      value = lp_build_pointer_get_unaligned2(builder, bld.vec_type,
+                                              color0_ptr, loop.counter, 4);
 
       /* Perform fragment shader body */
       value = llvm_fragment_body(&bld, shader, variant, &sampler, inputs_ptrs, consts_ptr, blend_color, alpha_ref, fs_type, value);
 
       /* Write 4 pixels */
-      lp_build_pointer_set_unaligned(builder, color0_ptr, loop.counter, value, 4);
+      lp_build_pointer_set_unaligned2(builder, bld.vec_type, color0_ptr,
+                                      loop.counter, value, 4);
    }
    lp_build_for_loop_end(&loop);
 
@@ -479,22 +501,24 @@ llvmpipe_fs_variant_linear_llvm(struct llvmpipe_context *lp,
       sampler.counter = width;
 
       /* Get the i32* pixel pointer from the <i16x8>* element pointer */
-      pixel_ptr = LLVMBuildGEP(gallivm->builder, color0_ptr, &width, 1, "");
+      pixel_ptr = LLVMBuildGEP2(gallivm->builder, bld.vec_type,
+                                color0_ptr, &width, 1, "");
       pixel_ptr = LLVMBuildBitCast(gallivm->builder, pixel_ptr, LLVMPointerType(int32t, 0), "");
 
       /* Copy individual pixels from memory to local buffer */
       lp_build_loop_begin(&loop_read, gallivm, LLVMConstInt(int32t, 0, 0));
       {
-         elem = lp_build_pointer_get(gallivm->builder, pixel_ptr, loop_read.counter);
+         elem = lp_build_pointer_get2(gallivm->builder, int32t, pixel_ptr,
+                                      loop_read.counter);
 
-         buf = LLVMBuildLoad(gallivm->builder, buf_ptr, "");
+         buf = LLVMBuildLoad2(gallivm->builder, pixelt, buf_ptr, "");
          buf = LLVMBuildInsertElement(builder, buf, elem, loop_read.counter, "");
          LLVMBuildStore(builder, buf, buf_ptr);
       }
       lp_build_loop_end_cond(&loop_read, excess, LLVMConstInt(int32t, 1, 0), LLVMIntUGE);
 
       /* Perform fragment shader body */
-      buf = LLVMBuildLoad(gallivm->builder, buf_ptr, "");
+      buf = LLVMBuildLoad2(gallivm->builder, pixelt, buf_ptr, "");
       buf = LLVMBuildBitCast(builder, buf, bld.vec_type, "");
 
       result = llvm_fragment_body(&bld, shader, variant, &sampler, inputs_ptrs, consts_ptr, blend_color, alpha_ref, fs_type, buf);
@@ -505,7 +529,8 @@ llvmpipe_fs_variant_linear_llvm(struct llvmpipe_context *lp,
       {
          elem = LLVMBuildExtractElement(builder, result, loop_write.counter, "");
 
-         lp_build_pointer_set(gallivm->builder, pixel_ptr, loop_write.counter, elem);
+         lp_build_pointer_set2(gallivm->builder, int32t, pixel_ptr,
+                               loop_write.counter, elem);
       }
       lp_build_loop_end_cond(&loop_write, excess, LLVMConstInt(int32t, 1, 0), LLVMIntUGE);
    }
@@ -518,5 +543,3 @@ llvmpipe_fs_variant_linear_llvm(struct llvmpipe_context *lp,
 
    gallivm_verify_function(gallivm, function);
 }
-
-

@@ -159,6 +159,13 @@ lp_build_pointer_get_unaligned(LLVMBuilderRef builder,
  * Set the value of an array element.
  */
 void
+lp_build_pointer_set2(LLVMBuilderRef builder,
+                      LLVMTypeRef elem_type,
+                      LLVMValueRef ptr,
+                      LLVMValueRef index,
+                      LLVMValueRef value);
+
+void
 lp_build_pointer_set(LLVMBuilderRef builder,
                      LLVMValueRef ptr,
                      LLVMValueRef index,
@@ -170,6 +177,14 @@ lp_build_pointer_set(LLVMBuilderRef builder,
  * If the element size is different from the alignment this will
  * cause llvm to emit an unaligned store
  */
+void
+lp_build_pointer_set_unaligned2(LLVMBuilderRef builder,
+                                LLVMTypeRef elem_type,
+                                LLVMValueRef ptr,
+                                LLVMValueRef index,
+                                LLVMValueRef value,
+                                unsigned alignment);
+
 void
 lp_build_pointer_set_unaligned(LLVMBuilderRef builder,
                                LLVMValueRef ptr,

@@ -702,6 +702,7 @@ lp_setup_set_fs_images(struct lp_setup_context *setup,
                        struct pipe_image_view *images)
 {
    unsigned i;
+   static const uint8_t dummy_image_data[64];
 
    LP_DBG(DEBUG_SETUP, "%s %p\n", __FUNCTION__, (void *) images);
 
@@ -716,6 +717,11 @@ lp_setup_set_fs_images(struct lp_setup_context *setup,
       struct lp_jit_image *jit_image;
 
       jit_image = &setup->fs.current.jit_context.images[i];
+      memset(jit_image, 0, sizeof(*jit_image));
+      jit_image->base = dummy_image_data;
+      jit_image->width = 1;
+      jit_image->height = 1;
+      jit_image->depth = 1;
       if (!lp_res)
          continue;
       if (!lp_res->dt) {
@@ -770,6 +776,12 @@ lp_setup_set_fs_images(struct lp_setup_context *setup,
    }
    for (; i < ARRAY_SIZE(setup->images); i++) {
       util_copy_image_view(&setup->images[i].current, NULL);
+      memset(&setup->fs.current.jit_context.images[i], 0,
+             sizeof(setup->fs.current.jit_context.images[i]));
+      setup->fs.current.jit_context.images[i].base = dummy_image_data;
+      setup->fs.current.jit_context.images[i].width = 1;
+      setup->fs.current.jit_context.images[i].height = 1;
+      setup->fs.current.jit_context.images[i].depth = 1;
    }
    setup->dirty |= LP_SETUP_NEW_FS;
 }
@@ -956,6 +968,7 @@ lp_setup_set_fragment_sampler_views(struct lp_setup_context *setup,
                                     struct pipe_sampler_view **views)
 {
    unsigned i, max_tex_num;
+   static const uint8_t dummy_tex_data[64];
 
    LP_DBG(DEBUG_SETUP, "%s\n", __FUNCTION__);
 
@@ -977,6 +990,11 @@ lp_setup_set_fragment_sampler_views(struct lp_setup_context *setup,
          struct llvmpipe_resource *lp_tex = llvmpipe_resource(res);
          struct lp_jit_texture *jit_tex;
          jit_tex = &setup->fs.current.jit_context.textures[i];
+         memset(jit_tex, 0, sizeof(*jit_tex));
+         jit_tex->base = dummy_tex_data;
+         jit_tex->width = 1;
+         jit_tex->height = 1;
+         jit_tex->depth = 1;
 
          /* We're referencing the texture's internal data, so save a
           * reference to it.
@@ -1091,6 +1109,12 @@ lp_setup_set_fragment_sampler_views(struct lp_setup_context *setup,
       }
       else {
          pipe_resource_reference(&setup->fs.current_tex[i], NULL);
+         memset(&setup->fs.current.jit_context.textures[i], 0,
+                sizeof(setup->fs.current.jit_context.textures[i]));
+         setup->fs.current.jit_context.textures[i].base = dummy_tex_data;
+         setup->fs.current.jit_context.textures[i].width = 1;
+         setup->fs.current.jit_context.textures[i].height = 1;
+         setup->fs.current.jit_context.textures[i].depth = 1;
       }
    }
    setup->fs.current_tex_num = num;
@@ -1114,11 +1138,12 @@ lp_setup_set_fragment_sampler_state(struct lp_setup_context *setup,
 
    for (i = 0; i < PIPE_MAX_SAMPLERS; i++) {
       const struct pipe_sampler_state *sampler = i < num ? samplers[i] : NULL;
+      struct lp_jit_sampler *jit_sam;
+
+      jit_sam = &setup->fs.current.jit_context.samplers[i];
+      memset(jit_sam, 0, sizeof(*jit_sam));
 
       if (sampler) {
-         struct lp_jit_sampler *jit_sam;
-         jit_sam = &setup->fs.current.jit_context.samplers[i];
-
          jit_sam->min_lod = sampler->min_lod;
          jit_sam->max_lod = sampler->max_lod;
          jit_sam->lod_bias = sampler->lod_bias;

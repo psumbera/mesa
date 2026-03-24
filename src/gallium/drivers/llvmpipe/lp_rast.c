@@ -26,7 +26,9 @@
  **************************************************************************/
 
 #include <limits.h>
+#include <string.h>
 #include "util/u_memory.h"
+#include "util/macros.h"
 #include "util/u_math.h"
 #include "util/u_rect.h"
 #include "util/u_surface.h"
@@ -328,6 +330,12 @@ lp_rast_shade_tile(struct lp_rasterizer_task *task,
    /* render the whole 64x64 tile in 4x4 chunks */
    for (y = 0; y < task->height; y += 4){
       for (x = 0; x < task->width; x += 4) {
+         union {
+            uint64_t align;
+            uint8_t data[LP_RAST_COEFF_COPY_BYTES];
+         } coeff_copy;
+         const void *a0 = lp_rast_shade_inputs_a0(inputs, coeff_copy.data,
+                                                  sizeof(coeff_copy.data));
          uint8_t *color[PIPE_MAX_COLOR_BUFS];
          unsigned stride[PIPE_MAX_COLOR_BUFS];
          unsigned sample_stride[PIPE_MAX_COLOR_BUFS];
@@ -372,9 +380,8 @@ lp_rast_shade_tile(struct lp_rasterizer_task *task,
          variant->jit_function[RAST_WHOLE]( &state->jit_context,
                                             tile_x + x, tile_y + y,
                                             inputs->frontfacing,
-                                            GET_A0(inputs),
-                                            GET_DADX(inputs),
-                                            GET_DADY(inputs),
+                                            a0,
+                                            inputs->stride,
                                             color,
                                             depth,
                                             mask,
@@ -472,6 +479,13 @@ lp_rast_shade_quads_mask_sample(struct lp_rasterizer_task *task,
     * allocated 4x4 blocks hence need to filter them out here.
     */
    if ((x % TILE_SIZE) < task->width && (y % TILE_SIZE) < task->height) {
+      union {
+         uint64_t align;
+         uint8_t data[LP_RAST_COEFF_COPY_BYTES];
+      } coeff_copy;
+      const void *a0 = lp_rast_shade_inputs_a0(inputs, coeff_copy.data,
+                                               sizeof(coeff_copy.data));
+
       /* Propagate non-interpolated raster state. */
       task->thread_data.raster_state.viewport_index = inputs->viewport_index;
       task->thread_data.raster_state.view_index = inputs->view_index;
@@ -481,9 +495,8 @@ lp_rast_shade_quads_mask_sample(struct lp_rasterizer_task *task,
       variant->jit_function[RAST_EDGE_TEST](&state->jit_context,
                                             x, y,
                                             inputs->frontfacing,
-                                            GET_A0(inputs),
-                                            GET_DADX(inputs),
-                                            GET_DADY(inputs),
+                                            a0,
+                                            inputs->stride,
                                             color,
                                             depth,
                                             mask,
@@ -1395,5 +1408,3 @@ void lp_rast_destroy( struct lp_rasterizer *rast )
 
    FREE(rast);
 }
-
-

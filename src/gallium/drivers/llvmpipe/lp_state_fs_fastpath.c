@@ -48,8 +48,7 @@ no_op(const struct lp_jit_context *context,
       uint32_t y,
       uint32_t facing,
       const void *a0,
-      const void *dadx,
-      const void *dady,
+      uint32_t interp_stride,
       uint8_t **cbufs,
       uint8_t *depth,
       uint64_t mask,
@@ -59,6 +58,20 @@ no_op(const struct lp_jit_context *context,
       unsigned *color_sample_stride,
       unsigned depth_sample_stride)
 {
+   (void)context;
+   (void)x;
+   (void)y;
+   (void)facing;
+   (void)a0;
+   (void)interp_stride;
+   (void)cbufs;
+   (void)depth;
+   (void)mask;
+   (void)thread_data;
+   (void)strides;
+   (void)depth_stride;
+   (void)color_sample_stride;
+   (void)depth_sample_stride;
 }
 
 
@@ -146,8 +159,7 @@ red(const struct lp_jit_context *context,
     uint32_t y,
     uint32_t facing,
     const void *a0,
-    const void *dadx,
-    const void *dady,
+    uint32_t interp_stride,
     uint8_t **cbufs,
     uint8_t *depth,
     uint64_t int_mask,
@@ -158,9 +170,17 @@ red(const struct lp_jit_context *context,
     unsigned depth_sample_stride)
 {
    opaque_color(cbufs, strides, int_mask, 0xffff0000);
+   (void)context;
+   (void)x;
+   (void)y;
+   (void)a0;
+   (void)interp_stride;
    (void)facing;
    (void)depth;
    (void)thread_data;
+   (void)depth_stride;
+   (void)sample_stride;
+   (void)depth_sample_stride;
 }
 
 
@@ -173,8 +193,7 @@ green(const struct lp_jit_context *context,
       uint32_t y,
       uint32_t facing,
       const void *a0,
-      const void *dadx,
-      const void *dady,
+      uint32_t interp_stride,
       uint8_t **cbufs,
       uint8_t *depth,
       uint64_t int_mask,
@@ -185,9 +204,17 @@ green(const struct lp_jit_context *context,
       unsigned depth_sample_stride)
 {
    opaque_color(cbufs, strides, int_mask, 0xff00ff00);
+   (void)context;
+   (void)x;
+   (void)y;
+   (void)a0;
+   (void)interp_stride;
    (void)facing;
    (void)depth;
    (void)thread_data;
+   (void)depth_stride;
+   (void)sample_stride;
+   (void)depth_sample_stride;
 }
 
 

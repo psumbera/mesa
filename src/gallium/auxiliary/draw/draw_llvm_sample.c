@@ -267,11 +267,65 @@ DRAW_LLVM_TEXTURE_MEMBER(depth,      DRAW_JIT_TEXTURE_DEPTH, TRUE)
 DRAW_LLVM_TEXTURE_MEMBER(first_level,DRAW_JIT_TEXTURE_FIRST_LEVEL, TRUE)
 DRAW_LLVM_TEXTURE_MEMBER(last_level, DRAW_JIT_TEXTURE_LAST_LEVEL, TRUE)
 DRAW_LLVM_TEXTURE_MEMBER(base_ptr,   DRAW_JIT_TEXTURE_BASE, TRUE)
-DRAW_LLVM_TEXTURE_MEMBER(row_stride, DRAW_JIT_TEXTURE_ROW_STRIDE, FALSE)
-DRAW_LLVM_TEXTURE_MEMBER(img_stride, DRAW_JIT_TEXTURE_IMG_STRIDE, FALSE)
-DRAW_LLVM_TEXTURE_MEMBER(mip_offsets, DRAW_JIT_TEXTURE_MIP_OFFSETS, FALSE)
 DRAW_LLVM_TEXTURE_MEMBER(num_samples, DRAW_JIT_TEXTURE_NUM_SAMPLES, TRUE)
 DRAW_LLVM_TEXTURE_MEMBER(sample_stride, DRAW_JIT_TEXTURE_SAMPLE_STRIDE, TRUE)
+
+static LLVMValueRef
+draw_llvm_texture_row_stride(const struct lp_sampler_dynamic_state *base,
+                             struct gallivm_state *gallivm,
+                             LLVMValueRef context_ptr,
+                             unsigned texture_unit,
+                             LLVMValueRef texture_unit_offset,
+                             LLVMTypeRef *out_type)
+{
+   if (out_type) {
+      *out_type = LLVMArrayType(LLVMInt32TypeInContext(gallivm->context),
+                                PIPE_MAX_TEXTURE_LEVELS);
+   }
+
+   return draw_llvm_texture_member(base, gallivm, context_ptr,
+                                   texture_unit, texture_unit_offset,
+                                   DRAW_JIT_TEXTURE_ROW_STRIDE,
+                                   "row_stride", FALSE);
+}
+
+static LLVMValueRef
+draw_llvm_texture_img_stride(const struct lp_sampler_dynamic_state *base,
+                             struct gallivm_state *gallivm,
+                             LLVMValueRef context_ptr,
+                             unsigned texture_unit,
+                             LLVMValueRef texture_unit_offset,
+                             LLVMTypeRef *out_type)
+{
+   if (out_type) {
+      *out_type = LLVMArrayType(LLVMInt32TypeInContext(gallivm->context),
+                                PIPE_MAX_TEXTURE_LEVELS);
+   }
+
+   return draw_llvm_texture_member(base, gallivm, context_ptr,
+                                   texture_unit, texture_unit_offset,
+                                   DRAW_JIT_TEXTURE_IMG_STRIDE,
+                                   "img_stride", FALSE);
+}
+
+static LLVMValueRef
+draw_llvm_texture_mip_offsets(const struct lp_sampler_dynamic_state *base,
+                              struct gallivm_state *gallivm,
+                              LLVMValueRef context_ptr,
+                              unsigned texture_unit,
+                              LLVMValueRef texture_unit_offset,
+                              LLVMTypeRef *out_type)
+{
+   if (out_type) {
+      *out_type = LLVMArrayType(LLVMInt32TypeInContext(gallivm->context),
+                                PIPE_MAX_TEXTURE_LEVELS);
+   }
+
+   return draw_llvm_texture_member(base, gallivm, context_ptr,
+                                   texture_unit, texture_unit_offset,
+                                   DRAW_JIT_TEXTURE_MIP_OFFSETS,
+                                   "mip_offsets", FALSE);
+}
 
 #define DRAW_LLVM_SAMPLER_MEMBER(_name, _index, _emit_load)  \
    static LLVMValueRef \
@@ -308,10 +362,42 @@ DRAW_LLVM_IMAGE_MEMBER(width,      DRAW_JIT_IMAGE_WIDTH, TRUE)
 DRAW_LLVM_IMAGE_MEMBER(height,     DRAW_JIT_IMAGE_HEIGHT, TRUE)
 DRAW_LLVM_IMAGE_MEMBER(depth,      DRAW_JIT_IMAGE_DEPTH, TRUE)
 DRAW_LLVM_IMAGE_MEMBER(base_ptr,   DRAW_JIT_IMAGE_BASE, TRUE)
-DRAW_LLVM_IMAGE_MEMBER(row_stride, DRAW_JIT_IMAGE_ROW_STRIDE, TRUE)
-DRAW_LLVM_IMAGE_MEMBER(img_stride, DRAW_JIT_IMAGE_IMG_STRIDE, TRUE)
 DRAW_LLVM_IMAGE_MEMBER(num_samples, DRAW_JIT_IMAGE_NUM_SAMPLES, TRUE)
 DRAW_LLVM_IMAGE_MEMBER(sample_stride, DRAW_JIT_IMAGE_SAMPLE_STRIDE, TRUE)
+
+static LLVMValueRef
+draw_llvm_image_row_stride(const struct lp_sampler_dynamic_state *base,
+                           struct gallivm_state *gallivm,
+                           LLVMValueRef context_ptr,
+                           unsigned image_unit,
+                           LLVMValueRef image_unit_offset,
+                           LLVMTypeRef *out_type)
+{
+   if (out_type)
+      *out_type = LLVMInt32TypeInContext(gallivm->context);
+
+   return draw_llvm_image_member(base, gallivm, context_ptr,
+                                 image_unit, image_unit_offset,
+                                 DRAW_JIT_IMAGE_ROW_STRIDE,
+                                 "row_stride", TRUE);
+}
+
+static LLVMValueRef
+draw_llvm_image_img_stride(const struct lp_sampler_dynamic_state *base,
+                           struct gallivm_state *gallivm,
+                           LLVMValueRef context_ptr,
+                           unsigned image_unit,
+                           LLVMValueRef image_unit_offset,
+                           LLVMTypeRef *out_type)
+{
+   if (out_type)
+      *out_type = LLVMInt32TypeInContext(gallivm->context);
+
+   return draw_llvm_image_member(base, gallivm, context_ptr,
+                                 image_unit, image_unit_offset,
+                                 DRAW_JIT_IMAGE_IMG_STRIDE,
+                                 "img_stride", TRUE);
+}
 
 static void
 draw_llvm_sampler_soa_destroy(struct lp_build_sampler_soa *sampler)

@@ -46,10 +46,15 @@ struct lp_image_static_state;
  */
 struct lp_build_sampler_soa *
 lp_llvm_sampler_soa_create(const struct lp_sampler_static_state *key,
-                           unsigned nr_samplers);
+                           unsigned nr_samplers,
+                           LLVMTypeRef jit_context_type,
+                           unsigned textures_idx,
+                           unsigned samplers_idx);
 
 struct lp_build_image_soa *
 lp_llvm_image_soa_create(const struct lp_image_static_state *key,
-                         unsigned nr_images);
+                         unsigned nr_images,
+                         LLVMTypeRef jit_context_type,
+                         unsigned images_idx);
 
 #endif /* LP_TEX_SAMPLE_H */

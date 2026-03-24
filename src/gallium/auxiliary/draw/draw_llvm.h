@@ -188,35 +188,35 @@ enum {
    DRAW_JIT_CTX_NUM_FIELDS
 };
 
-#define draw_jit_context_vs_constants(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, DRAW_JIT_CTX_CONSTANTS, "vs_constants")
+#define draw_jit_context_vs_constants(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, DRAW_JIT_CTX_CONSTANTS, "vs_constants")
 
-#define draw_jit_context_num_vs_constants(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, DRAW_JIT_CTX_NUM_CONSTANTS, "num_vs_constants")
+#define draw_jit_context_num_vs_constants(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, DRAW_JIT_CTX_NUM_CONSTANTS, "num_vs_constants")
 
-#define draw_jit_context_planes(_gallivm, _ptr) \
-   lp_build_struct_get(_gallivm, _ptr, DRAW_JIT_CTX_PLANES, "planes")
+#define draw_jit_context_planes(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, DRAW_JIT_CTX_PLANES, "planes")
 
-#define draw_jit_context_viewports(_gallivm, _ptr) \
-   lp_build_struct_get(_gallivm, _ptr, DRAW_JIT_CTX_VIEWPORT, "viewports")
+#define draw_jit_context_viewports(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, DRAW_JIT_CTX_VIEWPORT, "viewports")
 
-#define draw_jit_context_textures(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, DRAW_JIT_CTX_TEXTURES, "textures")
+#define draw_jit_context_textures(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, DRAW_JIT_CTX_TEXTURES, "textures")
 
-#define draw_jit_context_samplers(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, DRAW_JIT_CTX_SAMPLERS, "samplers")
+#define draw_jit_context_samplers(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, DRAW_JIT_CTX_SAMPLERS, "samplers")
 
-#define draw_jit_context_images(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, DRAW_JIT_CTX_IMAGES, "images")
+#define draw_jit_context_images(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, DRAW_JIT_CTX_IMAGES, "images")
 
-#define draw_jit_context_vs_ssbos(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, DRAW_JIT_CTX_SSBOS, "vs_ssbos")
+#define draw_jit_context_vs_ssbos(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, DRAW_JIT_CTX_SSBOS, "vs_ssbos")
 
-#define draw_jit_context_num_vs_ssbos(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, DRAW_JIT_CTX_NUM_SSBOS, "num_vs_ssbos")
+#define draw_jit_context_num_vs_ssbos(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, DRAW_JIT_CTX_NUM_SSBOS, "num_vs_ssbos")
 
-#define draw_jit_context_aniso_filter_table(_gallivm, _ptr) \
-   lp_build_struct_get(_gallivm, _ptr, DRAW_JIT_CTX_ANISO_FILTER_TABLE, "aniso_filter_table")
+#define draw_jit_context_aniso_filter_table(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, DRAW_JIT_CTX_ANISO_FILTER_TABLE, "aniso_filter_table")
 
 
 #define draw_jit_header_id(_gallivm, _ptr)              \
@@ -229,11 +229,11 @@ enum {
    lp_build_struct_get_ptr(_gallivm, _ptr, DRAW_JIT_VERTEX_DATA, "data")
 
 
-#define draw_jit_vbuffer_stride(_gallivm, _ptr)         \
-   lp_build_struct_get(_gallivm, _ptr, 0, "stride")
+#define draw_jit_vbuffer_stride(_gallivm, _type, _ptr)         \
+   lp_build_struct_get2(_gallivm, _type, _ptr, 0, "stride")
 
-#define draw_jit_vbuffer_offset(_gallivm, _ptr)         \
-   lp_build_struct_get(_gallivm, _ptr, 2, "buffer_offset")
+#define draw_jit_vbuffer_offset(_gallivm, _type, _ptr)         \
+   lp_build_struct_get2(_gallivm, _type, _ptr, 2, "buffer_offset")
 
 enum {
    DRAW_JIT_DVBUFFER_MAP = 0,
@@ -241,11 +241,11 @@ enum {
    DRAW_JIT_DVBUFFER_NUM_FIELDS  /* number of fields above */
 };
 
-#define draw_jit_dvbuffer_map(_gallivm, _ptr)         \
-   lp_build_struct_get(_gallivm, _ptr, DRAW_JIT_DVBUFFER_MAP, "map")
+#define draw_jit_dvbuffer_map(_gallivm, _type, _ptr)         \
+   lp_build_struct_get2(_gallivm, _type, _ptr, DRAW_JIT_DVBUFFER_MAP, "map")
 
-#define draw_jit_dvbuffer_size(_gallivm, _ptr)        \
-   lp_build_struct_get(_gallivm, _ptr, DRAW_JIT_DVBUFFER_SIZE, "size")
+#define draw_jit_dvbuffer_size(_gallivm, _type, _ptr)        \
+   lp_build_struct_get2(_gallivm, _type, _ptr, DRAW_JIT_DVBUFFER_SIZE, "size")
 
 
 /**
@@ -676,10 +676,14 @@ struct draw_llvm_variant
    struct gallivm_state *gallivm;
 
    /* LLVM JIT builder types */
+   LLVMTypeRef context_type;
    LLVMTypeRef context_ptr_type;
    LLVMTypeRef buffer_ptr_type;
    LLVMTypeRef vb_ptr_type;
    LLVMTypeRef vertex_header_ptr_type;
+   LLVMTypeRef buffer_type;
+   LLVMTypeRef vb_type;
+   LLVMTypeRef vertex_header_type;
 
    LLVMValueRef function;
    draw_jit_vert_func jit_func;
@@ -701,6 +705,7 @@ struct draw_gs_llvm_variant
 
    /* LLVM JIT builder types */
    LLVMTypeRef context_ptr_type;
+   LLVMTypeRef vertex_header_type;
    LLVMTypeRef vertex_header_ptr_type;
    LLVMTypeRef input_array_type;
 
@@ -751,6 +756,7 @@ struct draw_tes_llvm_variant
 
    /* LLVM JIT builder types */
    LLVMTypeRef context_ptr_type;
+   LLVMTypeRef vertex_header_type;
    LLVMTypeRef vertex_header_ptr_type;
    LLVMTypeRef input_array_type;
    LLVMTypeRef patch_input_array_type;

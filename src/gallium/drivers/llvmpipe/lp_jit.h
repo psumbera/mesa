@@ -199,50 +199,50 @@ enum {
 };
 
 
-#define lp_jit_context_constants(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_CONSTANTS, "constants")
+#define lp_jit_context_constants(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, LP_JIT_CTX_CONSTANTS, "constants")
 
-#define lp_jit_context_num_constants(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_NUM_CONSTANTS, "num_constants")
+#define lp_jit_context_num_constants(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, LP_JIT_CTX_NUM_CONSTANTS, "num_constants")
 
-#define lp_jit_context_textures(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_TEXTURES, "textures")
+#define lp_jit_context_textures(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, LP_JIT_CTX_TEXTURES, "textures")
 
-#define lp_jit_context_samplers(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_SAMPLERS, "samplers")
+#define lp_jit_context_samplers(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, LP_JIT_CTX_SAMPLERS, "samplers")
 
-#define lp_jit_context_images(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_IMAGES, "images")
+#define lp_jit_context_images(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, LP_JIT_CTX_IMAGES, "images")
 
-#define lp_jit_context_alpha_ref_value(_gallivm, _ptr) \
-   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_ALPHA_REF, "alpha_ref_value")
+#define lp_jit_context_alpha_ref_value(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, LP_JIT_CTX_ALPHA_REF, "alpha_ref_value")
 
-#define lp_jit_context_stencil_ref_front_value(_gallivm, _ptr) \
-   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_STENCIL_REF_FRONT, "stencil_ref_front")
+#define lp_jit_context_stencil_ref_front_value(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, LP_JIT_CTX_STENCIL_REF_FRONT, "stencil_ref_front")
 
-#define lp_jit_context_stencil_ref_back_value(_gallivm, _ptr) \
-   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_STENCIL_REF_BACK, "stencil_ref_back")
+#define lp_jit_context_stencil_ref_back_value(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, LP_JIT_CTX_STENCIL_REF_BACK, "stencil_ref_back")
 
-#define lp_jit_context_u8_blend_color(_gallivm, _ptr) \
-   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_U8_BLEND_COLOR, "u8_blend_color")
+#define lp_jit_context_u8_blend_color(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, LP_JIT_CTX_U8_BLEND_COLOR, "u8_blend_color")
 
-#define lp_jit_context_f_blend_color(_gallivm, _ptr) \
-   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_F_BLEND_COLOR, "f_blend_color")
+#define lp_jit_context_f_blend_color(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, LP_JIT_CTX_F_BLEND_COLOR, "f_blend_color")
 
-#define lp_jit_context_viewports(_gallivm, _ptr) \
-   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_VIEWPORTS, "viewports")
+#define lp_jit_context_viewports(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, LP_JIT_CTX_VIEWPORTS, "viewports")
 
-#define lp_jit_context_ssbos(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_SSBOS, "ssbos")
+#define lp_jit_context_ssbos(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, LP_JIT_CTX_SSBOS, "ssbos")
 
-#define lp_jit_context_num_ssbos(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_NUM_SSBOS, "num_ssbos")
+#define lp_jit_context_num_ssbos(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, LP_JIT_CTX_NUM_SSBOS, "num_ssbos")
 
-#define lp_jit_context_sample_mask(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_SAMPLE_MASK, "sample_mask")
+#define lp_jit_context_sample_mask(_gallivm, _type, _ptr) \
+   lp_build_struct_get_ptr2(_gallivm, _type, _ptr, LP_JIT_CTX_SAMPLE_MASK, "sample_mask")
 
-#define lp_jit_context_aniso_filter_table(_gallivm, _ptr) \
-   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_ANISO_FILTER_TABLE, "aniso_filter_table")
+#define lp_jit_context_aniso_filter_table(_gallivm, _type, _ptr) \
+   lp_build_struct_get2(_gallivm, _type, _ptr, LP_JIT_CTX_ANISO_FILTER_TABLE, "aniso_filter_table")
 
 struct lp_jit_thread_data
 {
@@ -297,8 +297,7 @@ enum {
  * @param y             block start y
  * @param facing        is front facing
  * @param a0            shader input a0
- * @param dadx          shader input dadx
- * @param dady          shader input dady
+ * @param interp_stride stride in bytes between a0/dadx/dady coefficient sets
  * @param color         color buffer
  * @param depth         depth buffer
  * @param mask          mask of visible pixels in block (16-bits per sample)
@@ -312,8 +311,7 @@ typedef void
                     uint32_t y,
                     uint32_t facing,
                     const void *a0,
-                    const void *dadx,
-                    const void *dady,
+                    uint32_t interp_stride,
                     uint8_t **color,
                     uint8_t *depth,
                     uint64_t mask,
